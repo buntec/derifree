@@ -3,70 +3,46 @@ package derifree
 import cats.syntax.all.*
 import cats.~>
 import cats.data.Writer
-import cats.Monoid
 
 object Compiler:
 
-  case class Log[T](spotObservations: Map[String, Set[T]], payments: Set[T])
-
-  object Log:
-    def spotObs[T](ticker: String, times: Set[T]) =
-      Log[T](Map(ticker -> times), Set.empty)
-
-    def payment[T](time: T) = Log[T](Map.empty, Set(time))
-
-    given monoid[T]: Monoid[Log[T]] = new Monoid[Log[T]]:
-      def empty: Log[T] = Log(Map.empty, Set.empty)
-      def combine(x: Log[T], y: Log[T]): Log[T] =
-        Log(x.spotObservations <+> y.spotObservations, x.payments <+> y.payments)
-
-  /** Relization of a piecewise diffusion. */
-  case class Simulation[T](
-      timeIndex: Map[T, Int],
-      deltaTs: IArray[Double],
-      spots: Map[String, IArray[Double]],
-      jumps: Map[String, IArray[Double]], // Jump(t_i) = S(t_i) - S(t_i-)
-      vols: Map[String, IArray[Double]],
-      discounts: IArray[Double]
-  )
-
   def run[T: TimeOrder](
       dsl: Dsl[T],
-      simulator: Log[T] => Either[String, Seq[Simulation[T]]]
+      simulator: Simulation.Spec[T] => Either[String, Seq[Simulation.Realization[T]]]
   )(
       rv: dsl.RV[Double]
   ): Either[String, Double] = {
-    val log = rv.foldMap(toLog(dsl)).run(0)
+    val log = rv.foldMap(toSpec(dsl)).run(0)
     simulator(log).flatMap(sims =>
       val (sumE, n) = sims.foldMapM(sim => (rv.foldMap(toValue(dsl, sim)), 1))
       sumE.map(_ / n)
     )
   }
 
-  private def toLog[T: TimeOrder](
+  private def toSpec[T: TimeOrder](
       dsl: Dsl[T]
-  ): dsl.RVA ~> ([A] =>> Writer[Log[T], A]) =
-    new (dsl.RVA ~> ([A] =>> Writer[Log[T], A])):
-      def apply[A](fa: dsl.RVA[A]): Writer[Log[T], A] = fa match
+  ): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A]) =
+    new (dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])):
+      def apply[A](fa: dsl.RVA[A]): Writer[Simulation.Spec[T], A] = fa match
         case dsl.Spot(ticker, time) =>
-          Writer(Log.spotObs(ticker, Set(time)), 1.0)
+          Writer(Simulation.Spec.spotObs(ticker, Set(time)), 1.0)
 
-        case dsl.Cashflow(amount, time) => Writer(Log.payment(time), PV(1.0))
+        case dsl.Cashflow(amount, time) => Writer(Simulation.Spec.discountObs(time), PV(1.0))
 
         case dsl.HitProb(dsl.Barrier.Discrete(_, _, levels)) =>
-          Writer(levels.toList.foldMap((ticker, obs) => Log.spotObs(ticker, obs.map(_(0)).toSet)), 0.5)
+          Writer(levels.toList.foldMap((ticker, obs) => Simulation.Spec.spotObs(ticker, obs.map(_(0)).toSet)), 0.5)
 
         case dsl.HitProb(dsl.Barrier.Continuous(_, _, levels, from, to)) =>
           Writer(
             levels.keys.toList.foldMap(ticker =>
-              Log.spotObs(ticker, Set(from, to) <+> TimeOrder[T].dailyStepsBetween(from, to).toSet)
+              Simulation.Spec.spotObs(ticker, Set(from, to) <+> TimeOrder[T].dailyStepsBetween(from, to).toSet)
             ),
             0.5
           )
 
   private def toValue[T: TimeOrder](
       dsl: Dsl[T],
-      sim: Simulation[T]
+      sim: Simulation.Realization[T]
   ): dsl.RVA ~> ([A] =>> Either[String, A]) =
     new (dsl.RVA ~> ([A] =>> Either[String, A])):
       def apply[A](fa: dsl.RVA[A]): Either[String, A] = fa match
