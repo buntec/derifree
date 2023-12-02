@@ -145,7 +145,7 @@ object Compiler:
                   if (sign * (s0 - level) <= 0 || sign * (s1 - level) <= 0 || sign * (s1r - level) <= 0) {
                     p = 0.0
                   } else {
-                    val u = math.log(level / s0) * math.log(level / s1) / (dt * vol * vol)
+                    val u = math.log(level / s0) * math.log(level / s1) / (vol * vol * dt)
                     p *= math.exp(sign * 2.0 * u)
                   }
                   i += 1

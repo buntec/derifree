@@ -21,10 +21,9 @@ object Simulation:
   /** Relization of a piecewise diffusion. */
   case class Realization[T](
       timeIndex: Map[T, Int],
-      ts: IArray[T], // simulation times
-      deltaTs: IArray[Double], // t_{i+1} - t_i
+      deltaTs: IArray[YearFraction], // t_{i+1} - t_i
       spots: Map[String, IArray[Double]],
       jumps: Map[String, IArray[Double]], // Jump(t_i) = S(t_i) - S(t_i-)
-      vols: Map[String, IArray[Double]],
+      vols: Map[String, IArray[Vol]],
       discounts: IArray[Double] // discount factors
   )
