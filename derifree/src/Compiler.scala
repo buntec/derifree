@@ -6,12 +6,7 @@ import cats.data.Writer
 
 object Compiler:
 
-  def run[T: TimeOrder](
-      dsl: Dsl[T],
-      simulator: Simulation.Spec[T] => Either[String, Seq[Simulation.Realization[T]]]
-  )(
-      rv: dsl.RV[Double]
-  ): Either[String, Double] = {
+  def run[T: TimeOrder](dsl: Dsl[T], simulator: Simulator[T])(rv: dsl.RV[Double]): Either[String, Double] = {
     val log = rv.foldMap(toSpec(dsl)).run(0)
     simulator(log).flatMap(sims =>
       val (sumE, n) = sims.foldMapM(sim => (rv.foldMap(toValue(dsl, sim)), 1))
