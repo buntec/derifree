@@ -6,7 +6,7 @@ import cats.data.Writer
 
 object Compiler:
 
-  def run[T: TimeOrder](dsl: Dsl[T], simulator: Simulator[T])(rv: dsl.RV[Double]): Either[String, Double] = {
+  def run[T: TimeLike](dsl: Dsl[T], simulator: Simulator[T])(rv: dsl.RV[Double]): Either[String, Double] = {
     val log = rv.foldMap(toSpec(dsl)).run(0)
     simulator(log).flatMap(sims =>
       val (sumE, n) = sims.foldMapM(sim => (rv.foldMap(toValue(dsl, sim)), 1))
@@ -14,7 +14,7 @@ object Compiler:
     )
   }
 
-  private def toSpec[T: TimeOrder](
+  private def toSpec[T: TimeLike](
       dsl: Dsl[T]
   ): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A]) =
     new (dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])):
@@ -30,12 +30,12 @@ object Compiler:
         case dsl.HitProb(dsl.Barrier.Continuous(_, _, levels, from, to)) =>
           Writer(
             levels.keys.toList.foldMap(ticker =>
-              Simulation.Spec.spotObs(ticker, Set(from, to) <+> TimeOrder[T].dailyStepsBetween(from, to).toSet)
+              Simulation.Spec.spotObs(ticker, Set(from, to) <+> TimeLike[T].dailyStepsBetween(from, to).toSet)
             ),
             0.5
           )
 
-  private def toValue[T: TimeOrder](
+  private def toValue[T: TimeLike](
       dsl: Dsl[T],
       sim: Simulation.Realization[T]
   ): dsl.RVA ~> ([A] =>> Either[String, A]) =
