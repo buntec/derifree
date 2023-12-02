@@ -38,9 +38,8 @@ object Compiler:
   ): Either[String, Double] = {
     val log = rv.foldMap(toLog(dsl)).run(0)
     simulator(log).flatMap(sims =>
-      sims
-        .traverse(sim => rv.foldMap(toValue(dsl, sim)))
-        .map(_.sum / sims.length)
+      val (sumE, n) = sims.foldMapM(sim => (rv.foldMap(toValue(dsl, sim)), 1))
+      sumE.map(_ / n)
     )
   }
 
