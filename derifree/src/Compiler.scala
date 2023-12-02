@@ -7,14 +7,21 @@ import cats.Monoid
 
 object Compiler:
 
-  case class Log[T](spotObservations: Map[String, List[T]], payments: List[T])
+  case class Log[T](spotObservations: Map[String, Set[T]], payments: Set[T])
 
   object Log:
-    def spotObs[T](ticker: String, times: List[T]) =
-      Log[T](Map(ticker -> times), Nil)
-    def payment[T](time: T) = Log[T](Map.empty, List(time))
+    def spotObs[T](ticker: String, times: Set[T]) =
+      Log[T](Map(ticker -> times), Set.empty)
 
-    given monoid[T]: Monoid[Log[T]] = ???
+    def payment[T](time: T) = Log[T](Map.empty, Set(time))
+
+    given monoid[T]: Monoid[Log[T]] = new Monoid[Log[T]]:
+      def empty: Log[T] = Log(Map.empty, Set.empty)
+      def combine(x: Log[T], y: Log[T]): Log[T] =
+        Log(
+          x.spotObservations <+> y.spotObservations,
+          x.payments <+> y.payments
+        )
 
   /** Relization of a piecewise diffusion. */
   case class Simulation[T](
@@ -46,12 +53,28 @@ object Compiler:
     new (dsl.RVA ~> ([A] =>> Writer[Log[T], A])):
       def apply[A](fa: dsl.RVA[A]): Writer[Log[T], A] = fa match
         case dsl.Spot(ticker, time) =>
-          Writer(Log.spotObs(ticker, List(time)), 1.0)
+          Writer(Log.spotObs(ticker, Set(time)), 1.0)
 
         case dsl.Cashflow(amount, time) => Writer(Log.payment(time), PV(1.0))
 
-        case dsl.HitProb(barrier) => ???
-        // Writer(Log.spotObs(ticker, List(from, to)), 0.5)
+        case dsl.HitProb(dsl.Barrier.Discrete(_, _, levels)) =>
+          Writer(
+            levels.toList.foldMap((ticker, obs) =>
+              Log.spotObs(ticker, obs.map(_(0)).toSet)
+            ),
+            0.5
+          )
+
+        case dsl.HitProb(dsl.Barrier.Continuous(_, _, levels, from, to)) =>
+          Writer(
+            levels.keys.toList.foldMap(ticker =>
+              Log.spotObs(
+                ticker,
+                Set(from, to) <+> TimeOrder[T].dailyStepsBetween(from, to).toSet
+              )
+            ),
+            0.5
+          )
 
   private def toValue[T: TimeOrder](
       dsl: Dsl[T],

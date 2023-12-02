@@ -11,6 +11,8 @@ trait TimeOrder[T] extends Order[T]:
 
 object TimeOrder:
 
+  def apply[T](using ev: TimeOrder[T]): TimeOrder[T] = ev
+
   def forYearFraction: TimeOrder[YearFraction] = new TimeOrder[YearFraction]:
 
     def compare(x: YearFraction, y: YearFraction): Int =
