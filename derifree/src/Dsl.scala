@@ -5,17 +5,33 @@ import cats.free.Free.*
 
 trait Dsl[T]:
 
+  import Barrier.*
+  enum Barrier:
+    case Continuous(
+        direction: Barrier.Direction,
+        policy: Barrier.Policy,
+        levels: Map[String, Double],
+        from: T,
+        to: T
+    )
+    case Discrete(
+        direction: Barrier.Direction,
+        policy: Barrier.Policy,
+        levels: Map[String, List[(T, Double)]]
+    )
+  object Barrier:
+    enum Direction:
+      case Down, Up
+
+    enum Policy:
+      case And, Or
+
   sealed trait RVA[A]
   case class Spot(ticker: String, time: T) extends RVA[Double]
   case class Cashflow(amount: Double, time: T) extends RVA[PV]
-  case class HitProb(
-      ticker: String,
-      level: Double,
-      from: T,
-      to: T,
-      fromBelow: Boolean
-  ) extends RVA[Double]
+  case class HitProb(barrier: Barrier) extends RVA[Double]
 
+  /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
 
   def spot(ticker: String, time: T): RV[Double] =
@@ -24,23 +40,11 @@ trait Dsl[T]:
   def cashflow(amount: Double, time: T): RV[PV] =
     liftF[RVA, PV](Cashflow(amount, time))
 
-  def hitProb(
-      ticker: String,
-      level: Double,
-      from: T,
-      to: T,
-      fromBelow: Boolean
-  ): RV[Double] =
-    liftF[RVA, Double](HitProb(ticker, level, from, to, fromBelow))
+  def hitProb(barrier: Barrier): RV[Double] =
+    liftF[RVA, Double](HitProb(barrier))
 
-  def survivalProb(
-      ticker: String,
-      level: Double,
-      from: T,
-      to: T,
-      fromBelow: Boolean
-  ): RV[Double] =
-    liftF[RVA, Double](HitProb(ticker, level, from, to, fromBelow)).map(1 - _)
+  def survivalProb(barrier: Barrier): RV[Double] =
+    liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
 object Dsl:
 

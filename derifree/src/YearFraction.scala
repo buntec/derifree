@@ -6,7 +6,14 @@ object YearFraction:
 
   def apply(t: Double): YearFraction = t
 
-  extension (yf: YearFraction)
+  val oneDay: YearFraction = 1.0 / 365
 
-    def -(rhs: YearFraction): YearFraction = yf - rhs
-    def <(rhs: YearFraction): Boolean = yf < rhs
+  extension (t: YearFraction)
+
+    def -(rhs: YearFraction): YearFraction = t - rhs
+
+    def <(rhs: YearFraction): Boolean = t < rhs
+
+    def add(rhs: YearFraction): YearFraction = t + rhs
+
+    def +(rhs: YearFraction): YearFraction = t + rhs

@@ -7,6 +7,8 @@ trait TimeOrder[T] extends Order[T]:
 
   def yearFractionBetween(x: T, y: T): YearFraction
 
+  def dailyStepsBetween(start: T, stop: T): List[T]
+
 object TimeOrder:
 
   def forYearFraction: TimeOrder[YearFraction] = new TimeOrder[YearFraction]:
@@ -16,6 +18,13 @@ object TimeOrder:
 
     def yearFractionBetween(x: YearFraction, y: YearFraction): YearFraction =
       y - x
+
+    def dailyStepsBetween(
+        start: YearFraction,
+        stop: YearFraction
+    ): List[YearFraction] =
+      val dt = YearFraction.oneDay
+      List.unfold(start + dt)(s => if s < stop then Some((s, s + dt)) else None)
 
   def forInstant: TimeOrder[java.time.Instant] =
     new TimeOrder[java.time.Instant]:
@@ -30,4 +39,10 @@ object TimeOrder:
           java.time.Duration
             .between(x, y)
             .toMillis / (1000.0 * 60 * 60 * 24 * 365)
+        )
+
+      def dailyStepsBetween(start: Instant, stop: Instant): List[Instant] =
+        val dt = java.time.Duration.ofDays(1)
+        List.unfold(start.plus(dt))(s =>
+          if s.isBefore(stop) then Some((s, s.plus(dt))) else None
         )
