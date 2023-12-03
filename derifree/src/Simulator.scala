@@ -15,7 +15,13 @@ object Simulator:
   def blackScholes[T: TimeLike](
       sobol: Sobol,
       nSimulations: Int
-  )(ref: T, s: Double, sigma: Vol, r: Rate): Simulator[T] =
+  )(
+      ref: T,
+      spots: Map[String, Double],
+      vols: Map[String, Vol],
+      correlations: Map[(String, String), Double],
+      rate: Rate
+  ): Simulator[T] =
     new Simulator[T]:
       def apply(spec: Spec[T]): Either[String, Seq[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
@@ -28,13 +34,16 @@ object Simulator:
         val dts = timeGrid.deltas
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
+        val spots0 = udls.map(udl => spots(udl)).toArray
+        val vols0 = udls.map(udl => vols(udl)).toArray
+        val r = rate.toDouble
         Either
           .fromOption(timeIndexMaybe, "failed to compute time index")
           .map(timeIndex =>
             LazyList.unfold((0, sobol.initialState)): (count, sobolState) =>
               if count < nSimulations then
                 val (nextSobolState, sobolNumbers) = sobol.next.run(sobolState).value
-                val z = sobolNumbers
+                val z = sobolNumbers.map(normal.inverseCdf)
 
                 val jumps = Array.ofDim[Double](nUdl, nt)
                 val vols = Array.ofDim[Double](nUdl, nt)
@@ -42,8 +51,8 @@ object Simulator:
 
                 var i = 0
                 while (i < nUdl) {
-                  ls(i)(0) = math.log(s)
-                  vols(i)(0) = sigma.toDouble
+                  ls(i)(0) = math.log(spots0(i))
+                  vols(i)(0) = vols0(i).toDouble
                   var j = 0
                   while (j < nt) {
                     val v = vols(i)(j)
@@ -54,7 +63,7 @@ object Simulator:
                   i += 1
                 }
 
-                val discounts = yearFractions.map(t => math.exp(-r * t)).toArray.toIndexedSeq
+                val discounts = yearFractions.map(t => math.exp(-rate * t)).toArray.toIndexedSeq
 
                 val spots =
                   udls.zipWithIndex.map((udl, i) => udl -> ArraySeq.unsafeWrapArray(ls(i).map(math.exp))).toMap
@@ -62,11 +71,11 @@ object Simulator:
                 val jumps0 =
                   udls.zipWithIndex.map((udl, i) => udl -> ArraySeq.unsafeWrapArray(jumps(i))).toMap
 
-                val vols0 =
+                val vols1 =
                   udls.zipWithIndex.map((udl, i) => udl -> ArraySeq.unsafeWrapArray(vols(i).map(Vol(_)))).toMap
 
                 Some(
-                  Simulation.Realization[T](timeIndex, dts, spots, jumps0, vols0, discounts),
+                  Simulation.Realization[T](timeIndex, dts, spots, jumps0, vols1, discounts),
                   (count + 1, nextSobolState)
                 )
               else None

@@ -24,7 +24,8 @@ object Sobol:
 
   def apply(dim: Int, directionNumbers: IndexedSeq[IndexedSeq[Int]]): Sobol = new Sobol:
 
-    def initialState: State = State(0, Array.ofDim[Int](dim).toIndexedSeq)
+    // skip first dimension: (0,...,0)
+    val initialState: State = next.runS(State(0, Array.ofDim[Int](dim).toIndexedSeq)).value
 
     val next: cState[State, IndexedSeq[Double]] =
       cState[State, IndexedSeq[Double]]: state =>
