@@ -8,10 +8,23 @@ object PV {
   def apply(pv: Double): PV = pv
 
   extension (pv: PV)
+    def toDouble: Double = pv
     def *(a: Double): PV = a * pv
     def +(rhs: PV): PV = pv + rhs
 
 }
+
+/** Annualized interest rate */
+opaque type Rate = Double
+
+object Rate:
+
+  def apply(r: Double): Rate = r
+
+  extension (r: Rate)
+    def toDouble: Double = r
+    def *(t: YearFraction): Double = r * t
+    def unary_- : Rate = -r
 
 opaque type YearFraction = Double
 
@@ -62,6 +75,7 @@ object Var:
   def apply(v: Double): Var = v
 
   extension (v: Var)
+    def toDouble: Double = v
     def +(rhs: Var): Var = v + rhs
     def *(rhs: YearFraction): Double = v * rhs
 
@@ -73,5 +87,6 @@ object Vol:
   def apply(v: Double): Vol = v
 
   extension (v: Vol)
+    def toDouble: Double = v
     def +(rhs: Vol): Vol = v + rhs
     def *(rhs: Vol): Var = v * rhs

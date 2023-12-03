@@ -25,5 +25,5 @@ object Simulation:
       spots: Map[String, IndexedSeq[Double]],
       jumps: Map[String, IndexedSeq[Double]], // Jump(t_i) = S(t_i) - S(t_i-)
       vols: Map[String, IndexedSeq[Vol]],
-      discounts: IArray[Double] // discount factors
+      discounts: IndexedSeq[Double] // discount factors
   )

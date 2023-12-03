@@ -95,7 +95,7 @@ object Sobol:
     def parseLine(line: String): Option[IndexedSeq[Int]] =
       val tokens = line.split(" ").toList.filter(_.nonEmpty).traverse(_.toIntOption)
       tokens.flatMap:
-        case s :: a :: m_i =>
+        case _ :: s :: a :: m_i =>
           val dirs = Array.ofDim[Int](BITS + 2)
           val m = (0 :: m_i).toArray
           var i = 1
@@ -125,7 +125,7 @@ object Sobol:
       dirs.toIndexedSeq
 
     val lines = fs2.io
-      .readClassLoaderResource[F]("/new-joe-kuo-6.21201")
+      .readClassLoaderResource[F]("new-joe-kuo-6.21201")
       .through(fs2.text.utf8.decode)
       .through(fs2.text.lines)
       .drop(1) // drop header

@@ -16,6 +16,8 @@ extension (tg: TimeGrid)
       case Found(foundIndex) => Some(foundIndex)
       case InsertionPoint(_) => None
 
+  def length: Int = tg.length
+
   def yearFractions: IndexedSeq[YearFraction] = tg.map(tickToYearFraction)
 
   def deltas: IndexedSeq[YearFraction] =

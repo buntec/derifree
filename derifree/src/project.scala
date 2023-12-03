@@ -6,3 +6,4 @@
 //> using options -deprecation -feature -explain -Wunused:all
 //> using computeVersion git:dynver
 //> using buildInfo
+//> using resourceDir ./resources
