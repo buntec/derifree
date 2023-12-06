@@ -38,6 +38,8 @@ object Simulator:
           (obsTimes zip yearFractions)
             .traverse((t, yf) => timeGrid.indexOf(yf).tupleLeft(t))
             .map(_.toMap)
+
+        val ts = timeGrid.yearFractions
         val dts = timeGrid.deltas
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
@@ -47,15 +49,16 @@ object Simulator:
         (
           NormalGen.fromSobol(nUdl, nt - 1, directionNumbers),
           Either.fromOption(timeIndexMaybe, Error.MissingTimeIndex)
-        ).mapN((normalGen, timeIndex) =>
+        ).mapN: (normalGen, timeIndex) =>
+
+          val jumps = Array.ofDim[Double](nUdl, nt)
+          val vols = Array.ofDim[Double](nUdl, nt)
+          val discounts = Array.ofDim[Double](nt)
+          val ls = Array.ofDim[Double](nUdl, nt)
+
           LazyList.unfold((0, normalGen.init)): (count, normalState) =>
             if count < nSimulations then
               val (nextNormalState, z) = normalGen.next.run(normalState).value
-
-              val jumps = Array.ofDim[Double](nUdl, nt)
-              val vols = Array.ofDim[Double](nUdl, nt)
-              val discounts = Array.ofDim[Double](nt)
-              val ls = Array.ofDim[Double](nUdl, nt)
 
               var i = 0
               while (i < nUdl) {
@@ -76,7 +79,7 @@ object Simulator:
                   ).toDouble + v * sdts(i) * z(i)(j)
                   i += 1
                 }
-                discounts(j + 1) = math.exp(-rate * timeGrid.yearFractions(j))
+                discounts(j + 1) = math.exp(-rate * ts(j))
                 j += 1
               }
 
@@ -94,7 +97,9 @@ object Simulator:
 
               val vols1 =
                 udls.zipWithIndex
-                  .map((udl, i) => udl -> ArraySeq.unsafeWrapArray(vols(i).map(Vol(_))))
+                  .map((udl, i) =>
+                    udl -> ArraySeq.unsafeWrapArray(vols(i)).asInstanceOf[IndexedSeq[Vol]]
+                  )
                   .toMap
 
               Some(
@@ -102,4 +107,3 @@ object Simulator:
                 (count + 1, nextNormalState)
               )
             else None
-        )
