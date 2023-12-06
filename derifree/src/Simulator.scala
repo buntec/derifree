@@ -31,6 +31,7 @@ object Simulator:
         val nUdl = udls.length
         val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
           .sorted(Order[T].toOrdering)
+
         val yearFractions = obsTimes.map(t => TimeLike[T].yearFractionBetween(ref, t))
         val timeGrid = TimeGrid.equidistant(100, yearFractions.max, yearFractions.toSet)
         val timeIndexMaybe =
@@ -53,26 +54,33 @@ object Simulator:
 
               val jumps = Array.ofDim[Double](nUdl, nt)
               val vols = Array.ofDim[Double](nUdl, nt)
+              val discounts = Array.ofDim[Double](nt)
               val ls = Array.ofDim[Double](nUdl, nt)
 
               var i = 0
               while (i < nUdl) {
                 ls(i)(0) = math.log(spots0(i))
                 vols(i)(0) = vols0(i).toDouble
-                var j = 0
-                while (j < nt) {
+                i += 1
+              }
+              discounts(0) = 1.0
+
+              var j = 0
+              while (j < nt - 1) {
+                var i = 0
+                while (i < nUdl) {
                   val v = vols(i)(j)
                   vols(i)(j + 1) = v
                   ls(i)(j + 1) = ls(i)(j) + (r.toDouble - 0.5 * v * v) * dts(
                     i
                   ).toDouble + v * sdts(i) * z(i)(j)
-                  j += 1
+                  i += 1
                 }
-                i += 1
+                discounts(j + 1) = math.exp(-rate * timeGrid.yearFractions(j))
+                j += 1
               }
 
-              val discounts =
-                ArraySeq.unsafeWrapArray(yearFractions.map(t => math.exp(-rate * t)).toArray)
+              val discounts0 = ArraySeq.unsafeWrapArray(discounts)
 
               val spots =
                 udls.zipWithIndex
@@ -90,7 +98,7 @@ object Simulator:
                   .toMap
 
               Some(
-                Simulation.Realization[T](timeIndex, dts, spots, jumps0, vols1, discounts),
+                Simulation.Realization[T](timeIndex, dts, spots, jumps0, vols1, discounts0),
                 (count + 1, nextNormalState)
               )
             else None

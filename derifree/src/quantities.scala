@@ -28,18 +28,20 @@ object Rate:
 
 opaque type YearFraction = Double
 
+private val doubleOrdering: Ordering[Double] = Ordering[Double]
+
 object YearFraction:
 
   def apply(t: Double): YearFraction = t
 
+  val zero = YearFraction(0.0)
   val oneSecond = YearFraction(1.0 / 365 / 24 / 60 / 60)
   val oneMinute = YearFraction(1.0 / 365 / 24 / 60)
   val oneHour = YearFraction(1.0 / 365 / 24)
   val oneDay: YearFraction = 1.0 / 365
   val oneYear: YearFraction = 1.0
 
-  private val ord: Ordering[Double] = Ordering[Double]
-  given Ordering[YearFraction] = ord
+  given Ordering[YearFraction] = doubleOrdering
 
   extension (t: YearFraction)
     def toDouble: Double = t
@@ -55,6 +57,8 @@ object YearFraction:
 
 opaque type Tick = Long
 
+private val longOrdering: Ordering[Long] = Ordering[Long]
+
 object Tick:
 
   def apply(n: Long): Tick = n
@@ -64,8 +68,7 @@ object Tick:
     def +(rhs: Tick): Tick = t + rhs
     def -(rhs: Tick): Tick = t - rhs
 
-  private val ord: Ordering[Long] = Ordering[Long]
-  given Ordering[Tick] = ord
+  given Ordering[Tick] = longOrdering
 
 /** Annualized variance */
 opaque type Var = Double

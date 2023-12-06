@@ -1,7 +1,7 @@
 package derifree
 
 import cats.kernel.Order
-import cats.syntax.all.*
+//import cats.syntax.all.*
 import java.time.Instant
 
 trait TimeLike[T] extends Order[T]:
@@ -14,7 +14,7 @@ object TimeLike:
 
   def apply[T](using ev: TimeLike[T]): TimeLike[T] = ev
 
-  def forYearFraction: TimeLike[YearFraction] = new TimeLike[YearFraction]:
+  given TimeLike[YearFraction] = new TimeLike[YearFraction]:
 
     def compare(x: YearFraction, y: YearFraction): Int =
       if x == y then 0 else if x < y then -1 else 1
@@ -29,7 +29,7 @@ object TimeLike:
       val dt = YearFraction.oneDay
       List.unfold(start + dt)(s => if s < stop then Some((s, s + dt)) else None)
 
-  def forInstant: TimeLike[java.time.Instant] =
+  given TimeLike[java.time.Instant] =
     new TimeLike[java.time.Instant]:
 
       def compare(x: Instant, y: Instant): Int =
@@ -46,7 +46,9 @@ object TimeLike:
 
       def dailyStepsBetween(start: Instant, stop: Instant): List[Instant] =
         val dt = java.time.Duration.ofDays(1)
-        List.unfold(start.plus(dt))(s => if s.isBefore(stop) then Some((s, s.plus(dt))) else None)
+        List.unfold(start.plus(dt))(s =>
+          if s.isBefore(stop) then Some((s, s.plus(dt))) else None
+        )
 
 trait TimeLikeSyntax:
 

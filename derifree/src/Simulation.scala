@@ -16,7 +16,12 @@ object Simulation:
     given monoid[T]: Monoid[Spec[T]] = new Monoid[Spec[T]]:
       def empty: Spec[T] = Spec(Map.empty, Set.empty)
       def combine(x: Spec[T], y: Spec[T]): Spec[T] =
-        Spec(x.spotObs <+> y.spotObs, x.discountObs <+> y.discountObs)
+        // we cannot simply do <+> on spotObs b/c the
+        // default monoid instance for Map will not combine values
+        val spotObs = (x.spotObs.toList ++ y.spotObs.toList)
+          .groupBy((udl, _) => udl)
+          .map((udl, l) => udl -> l.map(_(1)).combineAll)
+        Spec(spotObs, x.discountObs <+> y.discountObs)
 
   /** Relization of a piecewise diffusion. */
   case class Realization[T](

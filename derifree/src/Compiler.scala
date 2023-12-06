@@ -7,7 +7,7 @@ import cats.data.Writer
 object Compiler:
 
   enum Error extends derifree.Error:
-    case Generic(message: String)
+    case Generic(override val getMessage: String)
 
   def run[T: TimeLike](dsl: Dsl[T], simulator: Simulator[T])(
       rv: dsl.RV[Double]
@@ -55,12 +55,18 @@ object Compiler:
     new (dsl.RVA ~> ([A] =>> Either[Error, A])):
       def apply[A](fa: dsl.RVA[A]): Either[Error, A] = fa match
         case dsl.Spot(ticker, time) =>
-          Either.fromOption(
-            sim.timeIndex
-              .get(time)
-              .flatMap(t => sim.spots.get(ticker).map(_(t))),
-            Error.Generic(s"missing spot for $ticker")
-          )
+          Either
+            .fromOption(
+              sim.timeIndex
+                .get(time),
+              Error.Generic(s"missing time index for $time")
+            )
+            .flatMap(i =>
+              Either
+                .fromOption(sim.spots.get(ticker), Error.Generic(s"missing spots for $ticker"))
+                .map(_(i))
+            )
+
         case dsl.Cashflow(amount, time) =>
           Either.fromOption(
             sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
@@ -136,21 +142,30 @@ object Compiler:
               levels.keys.toList
                 .traverse(ticker =>
                   Either
-                    .fromOption(sim.spots.get(ticker), Error.Generic(s"missing spots for $ticker"))
+                    .fromOption(
+                      sim.spots.get(ticker),
+                      Error.Generic(s"missing spots for $ticker")
+                    )
                     .tupleLeft(ticker)
                 )
                 .map(_.toMap),
               levels.keys.toList
                 .traverse(ticker =>
                   Either
-                    .fromOption(sim.jumps.get(ticker), Error.Generic(s"missing jumps for $ticker"))
+                    .fromOption(
+                      sim.jumps.get(ticker),
+                      Error.Generic(s"missing jumps for $ticker")
+                    )
                     .tupleLeft(ticker)
                 )
                 .map(_.toMap),
               levels.keys.toList
                 .traverse(ticker =>
                   Either
-                    .fromOption(sim.vols.get(ticker), Error.Generic(s"missing vols for $ticker"))
+                    .fromOption(
+                      sim.vols.get(ticker),
+                      Error.Generic(s"missing vols for $ticker")
+                    )
                     .tupleLeft(ticker)
                 )
                 .map(_.toMap),
@@ -178,7 +193,7 @@ object Compiler:
                     p = 0.0
                   } else {
                     val u = math.log(level / s0) * math.log(level / s1) / (vol * vol * dt)
-                    p *= math.exp(sign * 2.0 * u)
+                    p *= (1 - math.exp(-2 * u))
                   }
                   i += 1
                 }
