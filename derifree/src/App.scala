@@ -26,7 +26,7 @@ object Main extends IOApp.Simple:
 
       val sim: Simulator[YearFraction] =
         Simulator
-          .blackScholes[YearFraction](64000, dirNums)(refTime, spots, vols, correlations, rate)
+          .blackScholes[YearFraction](10000, dirNums)(refTime, spots, vols, correlations, rate)
 
       val dsl = Dsl[YearFraction]
 

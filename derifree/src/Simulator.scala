@@ -56,17 +56,24 @@ object Simulator:
           val discounts = Array.ofDim[Double](nt)
           val ls = Array.ofDim[Double](nUdl, nt)
 
+          var i = 0
+          while (i < nUdl) {
+            ls(i)(0) = math.log(spots0(i))
+            vols(i)(0) = vols0(i).toDouble
+            i += 1
+          }
+
+          discounts(0) = 1.0
+          var j = 1
+          while (j < nt) {
+            discounts(j) = math.exp(-rate * ts(j))
+            j += 1
+          }
+          val discounts0 = ArraySeq.unsafeWrapArray(discounts)
+
           LazyList.unfold((0, normalGen.init)): (count, normalState) =>
             if count < nSimulations then
               val (nextNormalState, z) = normalGen.next.run(normalState).value
-
-              var i = 0
-              while (i < nUdl) {
-                ls(i)(0) = math.log(spots0(i))
-                vols(i)(0) = vols0(i).toDouble
-                i += 1
-              }
-              discounts(0) = 1.0
 
               var j = 0
               while (j < nt - 1) {
@@ -79,11 +86,8 @@ object Simulator:
                   ).toDouble + v * sdts(i) * z(i)(j)
                   i += 1
                 }
-                discounts(j + 1) = math.exp(-rate * ts(j))
                 j += 1
               }
-
-              val discounts0 = ArraySeq.unsafeWrapArray(discounts)
 
               val spots =
                 udls.zipWithIndex
