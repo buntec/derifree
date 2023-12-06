@@ -2,12 +2,15 @@ package app
 
 import cats.effect.*
 import cats.syntax.all.*
-import derifree.Sobol
+import derifree.*
+import derifree.prettyprint.given
 
 object Main extends IOApp.Simple:
 
-  def run: IO[Unit] = Sobol.directionNumbersFromResource[IO](100).flatMap { dirNums =>
-    val sobol = Sobol(10, dirNums)
-    val seq = sobol.next.replicateA(10).runA(sobol.initialState).value
-    IO.println(seq)
-  }
+  def run: IO[Unit] = Sobol
+    .directionNumbersFromResource[IO](100)
+    .flatMap: dirNums =>
+      IO.fromEither(NormalGen.fromSobol(10, 3, dirNums))
+    .flatMap: normalGen =>
+      val seq = normalGen.next.replicateA(10).runA(normalGen.init).value
+      IO.println(seq.map(_.show).mkString("\n\n"))
