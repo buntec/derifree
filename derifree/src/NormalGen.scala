@@ -1,7 +1,6 @@
 package derifree
 
 import cats.data.{State => cState}
-import cats.syntax.all.*
 
 trait NormalGen:
 

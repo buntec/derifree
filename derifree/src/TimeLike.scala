@@ -1,6 +1,7 @@
 package derifree
 
 import cats.kernel.Order
+import cats.syntax.all.*
 import java.time.Instant
 
 trait TimeLike[T] extends Order[T]:
@@ -46,3 +47,9 @@ object TimeLike:
       def dailyStepsBetween(start: Instant, stop: Instant): List[Instant] =
         val dt = java.time.Duration.ofDays(1)
         List.unfold(start.plus(dt))(s => if s.isBefore(stop) then Some((s, s.plus(dt))) else None)
+
+trait TimeLikeSyntax:
+
+  extension [T: TimeLike](t: T)
+    def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
+    def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
