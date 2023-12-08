@@ -7,6 +7,8 @@ import derifree.Simulation.Spec
 import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.collection.immutable.ArraySeq
+import org.ejml.data.DMatrixRMaj
+import org.ejml.dense.row.factory.DecompositionFactory_DDRM
 
 trait Simulator[T]:
 
@@ -18,6 +20,38 @@ object Simulator:
 
   enum Error extends derifree.Error:
     case MissingTimeIndex
+
+  private def cholesky(
+      corrs: Map[(String, String), Double],
+      udls: List[String]
+  ): IndexedSeq[IndexedSeq[Double]] =
+    val udlsArr = udls.toArray
+    val n = udlsArr.length
+
+    val data = for {
+      udl1 <- udls
+      udl2 <- udls
+    } yield
+      if (udl1 == udl2) then 1.0 else corrs.get((udl1, udl2)).getOrElse(corrs((udl2, udl1)))
+
+    val mat = new DMatrixRMaj(udlsArr.length, udlsArr.length, true, data*)
+    val decomp = DecompositionFactory_DDRM.chol(true)
+    val success = decomp.decompose(mat)
+    if (!success) {
+      throw new RuntimeException("cholesky decomp failed")
+    }
+    val lower = decomp.getT(null)
+    val res = Array.ofDim[Double](n, n)
+    var i = 0
+    while (i < n) {
+      var j = 0
+      while (j < n) {
+        res(i)(j) = lower.get(i, j)
+        j += 1
+      }
+      i += 1
+    }
+    ArraySeq.unsafeWrapArray(res.map(row => ArraySeq.unsafeWrapArray(row)))
 
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
@@ -49,6 +83,8 @@ object Simulator:
         val spots0 = udls.map(udl => spots(udl)).toArray
         val vols0 = udls.map(udl => vols(udl)).toArray
         val r = rate.toDouble
+
+        val chol = cholesky(correlations, udls)
 
         (
           normalGenFactory(nUdl, nt - 1),
@@ -82,18 +118,32 @@ object Simulator:
           }
           val discounts0 = ArraySeq.unsafeWrapArray(discounts)
 
+          val z = Array.ofDim[Double](nUdl)
+
           LazyList.unfold((0, normalGen.init)): (count, normalState) =>
             if count < nSimulations then
-              val (nextNormalState, z) = normalGen.next.run(normalState).value
+              val (nextNormalState, z0) = normalGen.next.run(normalState).value
 
               var j = 0
               while (j < nt - 1) {
+
                 var i = 0
+                while (i < nUdl) {
+                  z(i) = 0
+                  var k = 0
+                  while (k < i) {
+                    z(i) += z0(k)(j) * chol(i)(k)
+                    k += 1
+                  }
+                  i += 1
+                }
+
+                i = 0
                 while (i < nUdl) {
                   val v = vols(i)(j)
                   vols(i)(j + 1) = v
                   logspots(i)(j + 1) =
-                    logspots(i)(j) + (r - 0.5 * v * v) * dts(i).toDouble + v * sdts(i) * z(i)(j)
+                    logspots(i)(j) + (r - 0.5 * v * v) * dts(i).toDouble + v * sdts(i) * z(i)
                   i += 1
                 }
                 j += 1

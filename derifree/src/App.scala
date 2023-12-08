@@ -20,7 +20,7 @@ object Main extends IOApp.Simple:
 
       val spots = Map("AAPL" -> 250.0, "META" -> 100.0)
       val vols = Map("AAPL" -> Vol(0.3), "META" -> Vol(0.4))
-      val correlations = Map(("AAPL", "META") -> 0.5)
+      val correlations = Map(("AAPL", "META") -> 0.0)
       val rate = Rate(0.05)
       val refTime = YearFraction.zero
 
