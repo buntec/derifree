@@ -23,7 +23,7 @@ object Simulator:
       timeGridFactory: TimeGrid.Factory,
       normalGenFactory: NormalGen.Factory,
       nSimulations: Int,
-      ref: T,
+      refTime: T,
       spots: Map[String, Double],
       vols: Map[String, Vol],
       correlations: Map[(String, String), Double],
@@ -36,12 +36,11 @@ object Simulator:
         val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
           .sorted(Order[T].toOrdering)
 
-        val yearFractions = obsTimes.map(t => TimeLike[T].yearFractionBetween(ref, t))
+        val yearFractions = obsTimes.map(t => TimeLike[T].yearFractionBetween(refTime, t))
         val timeGrid = timeGridFactory(yearFractions.toSet)
-        val timeIndexMaybe =
-          (obsTimes zip yearFractions)
-            .traverse((t, yf) => timeGrid.indexOf(yf).tupleLeft(t))
-            .map(_.toMap)
+        val timeIndexMaybe = (obsTimes zip yearFractions)
+          .traverse((t, yf) => timeGrid.indexOf(yf).tupleLeft(t))
+          .map(_.toMap)
 
         val ts = timeGrid.yearFractions
         val dts = timeGrid.deltas

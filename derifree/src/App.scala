@@ -64,14 +64,13 @@ object Main extends IOApp.Simple:
         payout <- cashflow(max(0.0, strike - min(s1 / s1_0, s2 / s2_0)), settlement)
       } yield payout * pHit
 
-      val compiler = Compiler[YearFraction]
+      val priceAndPrint = IO.delay:
+        val t1 = System.nanoTime()
+        val price = worstOfDip.mean(sim)
+        val t2 = System.nanoTime()
+        println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 
-      val price =
-        IO.defer(IO.fromEither(compiler.run(dsl, sim)(worstOfDip))).timed
-
-      price
-        .flatMap((d, p) => IO.println(s"price = $p, duration = ${d.toMillis} ms"))
-        .replicateA_(100)
+      priceAndPrint.replicateA_(100)
 
     }
 

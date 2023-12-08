@@ -21,6 +21,7 @@ trait Dsl[T]:
         policy: Barrier.Policy,
         levels: Map[String, List[(T, Double)]]
     )
+
   object Barrier:
     enum Direction:
       case Down, Up
