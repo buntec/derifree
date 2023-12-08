@@ -198,6 +198,16 @@ object Compiler:
                     .traverse(ticker =>
                       Either
                         .fromOption(
+                          sim.logSpots.get(ticker),
+                          Error.Generic(s"missing log-spots for $ticker")
+                        )
+                        .tupleLeft(ticker)
+                    )
+                    .map(_.toMap),
+                  levels.keys.toList
+                    .traverse(ticker =>
+                      Either
+                        .fromOption(
                           sim.jumps.get(ticker),
                           Error.Generic(s"missing jumps for $ticker")
                         )
@@ -214,14 +224,16 @@ object Compiler:
                         .tupleLeft(ticker)
                     )
                     .map(_.toMap),
-                ).mapN { case (spotObsIdxs, spots, jumps, vols) =>
+                ).mapN { case (spotObsIdxs, spots, logSpots, jumps, vols) =>
                   var p = 1.0 // survival probability
                   val sign = direction match {
                     case dsl.Barrier.Direction.Up   => -1
                     case dsl.Barrier.Direction.Down => 1
                   }
                   levels.foreach: (ticker, level) =>
+                    val logLevel = math.log(level)
                     val s = spots(ticker)
+                    val ls = logSpots(ticker)
                     val v = vols(ticker)
                     val jmp = jumps(ticker)
                     var i = 0
@@ -230,9 +242,12 @@ object Compiler:
                       val i1 = spotObsIdxs(i + 1)
                       val dt = sim.ts(i1) - sim.ts(i0)
                       val s0 = s(i0)
+                      val ls0 = ls(i0)
                       // we want s1 = S(t_{i+1}-) (limit from the left) and use Jump(t_i) = S(t_i) - S(t_i-)
-                      val s1 = s(i1) - jmp(i1)
+                      val jmp1 = jmp(i1)
+                      val s1 = s(i1) - jmp1
                       val s1r = s(i1)
+                      val ls1r = ls(i1)
                       val vol = v(i0)
                       // println(s"s0 = $s0, s1 = $s1, s1r = $s1r, vol =$vol")
                       if (
@@ -240,7 +255,9 @@ object Compiler:
                       ) {
                         p = 0.0
                       } else {
-                        val u = math.log(level / s0) * math.log(level / s1) / (vol * vol * dt)
+                        val d1 = (logLevel - ls0)
+                        val d2 = if (jmp1 != 0) then math.log(level / s1) else logLevel - ls1r
+                        val u = d1 * d2 / (vol * vol * dt)
                         p *= (1 - math.exp(-2 * u))
                       }
                       i += 1

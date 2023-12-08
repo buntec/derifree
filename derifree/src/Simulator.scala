@@ -10,7 +10,9 @@ import scala.collection.immutable.ArraySeq
 
 trait Simulator[T]:
 
-  def apply(spec: Simulation.Spec[T]): Either[derifree.Error, Seq[Simulation.Realization[T]]]
+  def apply(
+      spec: Simulation.Spec[T]
+  ): Either[derifree.Error, LazyList[Simulation.Realization[T]]]
 
 object Simulator:
 
@@ -28,7 +30,7 @@ object Simulator:
       rate: Rate
   ): Simulator[T] =
     new Simulator[T]:
-      def apply(spec: Spec[T]): Either[derifree.Error, Seq[Realization[T]]] =
+      def apply(spec: Spec[T]): Either[derifree.Error, LazyList[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
         val nUdl = udls.length
         val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
@@ -108,6 +110,11 @@ object Simulator:
                 }
 
               // println(spots.show)
+              //
+              val logSpots1 =
+                udls.zipWithIndex
+                  .map((udl, i) => udl -> ArraySeq.unsafeWrapArray(ls(i).clone))
+                  .toMap
 
               val spots1 =
                 udls.zipWithIndex
@@ -130,7 +137,16 @@ object Simulator:
 
               Some(
                 Simulation
-                  .Realization[T](timeIndex, ts, dts, spots1, jumps0, vols1, discounts0),
+                  .Realization[T](
+                    timeIndex,
+                    ts,
+                    dts,
+                    spots1,
+                    logSpots1,
+                    jumps0,
+                    vols1,
+                    discounts0
+                  ),
                 (count + 1, nextNormalState)
               )
             else None
