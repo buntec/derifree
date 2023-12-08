@@ -24,9 +24,11 @@ object Main extends IOApp.Simple:
       val rate = Rate(0.05)
       val refTime = YearFraction.zero
 
+      val nSims = 10000
+
       val sim: Simulator[YearFraction] =
         Simulator
-          .blackScholes[YearFraction](10000, dirNums)(refTime, spots, vols, correlations, rate)
+          .blackScholes[YearFraction](nSims, dirNums)(refTime, spots, vols, correlations, rate)
 
       val dsl = Dsl[YearFraction]
 
@@ -58,7 +60,7 @@ object Main extends IOApp.Simple:
 
       price
         .flatMap((d, p) => IO.println(s"price = $p, duration = ${d.toMillis} ms"))
-        .replicateA_(100)
+        .replicateA_(1000)
 
     }
 

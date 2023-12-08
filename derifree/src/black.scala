@@ -4,6 +4,7 @@ import cats.syntax.all.*
 import derifree.normal
 import org.apache.commons.math3.analysis.UnivariateFunction
 import org.apache.commons.math3.analysis.solvers.BrentSolver
+import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.util.control.NoStackTrace
 
@@ -46,16 +47,24 @@ def impliedVol(
   val omega = optionType match
     case OptionType.Call => 1
     case OptionType.Put  => -1
-  if price <= discountFactor * math.max(omega * (forward - strike), 0) then Left(Error.PriceBelowIntrinsic)
-  else if (omega > 0 && price > discountFactor * forward) || (omega < 0 && price > discountFactor * strike) then
-    Left(Error.PriceExceedsUpperBound)
+  if price <= discountFactor * math.max(omega * (forward - strike), 0) then
+    Left(Error.PriceBelowIntrinsic)
+  else if (omega > 0 && price > discountFactor * forward) || (omega < 0 && price > discountFactor * strike)
+  then Left(Error.PriceExceedsUpperBound)
   else
     solver match
       case Solver.Brent(maxIters, absAccuracy, minVol, maxVol) =>
         val brent = new BrentSolver(absAccuracy)
         val objective = new UnivariateFunction:
           def value(x: Double): Double =
-            price - derifree.black.price(optionType, strike, timeToExpiry, x, forward, discountFactor)
+            price - derifree.black.price(
+              optionType,
+              strike,
+              timeToExpiry,
+              x,
+              forward,
+              discountFactor
+            )
         Either
           .catchNonFatal(brent.solve(maxIters, objective, minVol, maxVol))
           .leftMap(t => Error.SolverFailed(t.getMessage))

@@ -3,6 +3,7 @@ package derifree
 import cats.syntax.all.*
 import cats.~>
 import cats.data.Writer
+import org.apache.commons.math3.util.{FastMath => math}
 
 object Compiler:
 
@@ -18,6 +19,9 @@ object Compiler:
       sumE.map(_ / n)
     )
   }
+
+  private def continousBarrierObsTimes[T: TimeLike](from: T, to: T): Set[T] =
+    Set(from, to) <+> TimeLike[T].dailyStepsBetween(from, to).toSet
 
   private def toSpec[T: TimeLike](
       dsl: Dsl[T]
@@ -42,7 +46,7 @@ object Compiler:
             levels.keys.toList.foldMap(ticker =>
               Simulation.Spec.spotObs(
                 ticker,
-                Set(from, to) <+> TimeLike[T].dailyStepsBetween(from, to).toSet
+                continousBarrierObsTimes(from, to)
               )
             ),
             0.5
@@ -64,7 +68,10 @@ object Compiler:
             .flatMap(i =>
               Either
                 .fromOption(sim.spots.get(ticker), Error.Generic(s"missing spots for $ticker"))
-                .map(_(i))
+                .map: spots =>
+                  val spot = spots(i)
+                  // println(s"spot($ticker, $time)=$spot")
+                  spot
             )
 
         case dsl.Cashflow(amount, time) =>
@@ -137,8 +144,12 @@ object Compiler:
             Error.Generic("Only `or` barriers are supported for continuous monitoring")
           ) *>
             (
-              Either.fromOption(sim.timeIndex.get(from), Error.Generic("missing `from` index")),
-              Either.fromOption(sim.timeIndex.get(to), Error.Generic("missing `to` index")),
+              Either.fromOption(
+                continousBarrierObsTimes(from, to).toList
+                  .traverse(t => sim.timeIndex.get(t))
+                  .map(_.toArray.sorted),
+                Error.Generic("missing spot time index")
+              ),
               levels.keys.toList
                 .traverse(ticker =>
                   Either
@@ -169,7 +180,7 @@ object Compiler:
                     .tupleLeft(ticker)
                 )
                 .map(_.toMap),
-            ).mapN { case (i1, i2, spots, jumps, vols) =>
+            ).mapN { case (spotObsIdxs, spots, jumps, vols) =>
               var p = 1.0 // survival probability
               val sign = direction match {
                 case dsl.Barrier.Direction.Up   => -1
@@ -179,14 +190,17 @@ object Compiler:
                 val s = spots(ticker)
                 val v = vols(ticker)
                 val jmp = jumps(ticker)
-                var i = i1
-                while (i < i2) {
-                  val dt = sim.deltaTs(i)
-                  val s0 = s(i)
+                var i = 0
+                while (i < spotObsIdxs.length - 1) {
+                  val i0 = spotObsIdxs(i)
+                  val i1 = spotObsIdxs(i + 1)
+                  val dt = sim.ts(i1) - sim.ts(i0)
+                  val s0 = s(i0)
                   // we want s1 = S(t_{i+1}-) (limit from the left) and use Jump(t_i) = S(t_i) - S(t_i-)
-                  val s1 = s(i + 1) - jmp(i + 1)
-                  val s1r = s(i + 1)
-                  val vol = v(i)
+                  val s1 = s(i1) - jmp(i1)
+                  val s1r = s(i1)
+                  val vol = v(i0)
+                  // println(s"s0 = $s0, s1 = $s1, s1r = $s1r, vol =$vol")
                   if (
                     sign * (s0 - level) <= 0 || sign * (s1 - level) <= 0 || sign * (s1r - level) <= 0
                   ) {

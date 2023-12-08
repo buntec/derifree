@@ -1,6 +1,6 @@
 package derifree
 
-import org.apache.commons.math3.util.FastMath.sqrt
+import org.apache.commons.math3.util.{FastMath => math}
 
 object BrownianBridge:
 
@@ -25,7 +25,7 @@ object BrownianBridge:
     val path = Array.fill(numberOfSteps)(0.0)
 
     map(numberOfSteps - 1) = 1
-    stddev(0) = sqrt(numberOfSteps.toDouble)
+    stddev(0) = math.sqrt(numberOfSteps.toDouble)
     bridgeIndex(0) = numberOfSteps - 1
     var j = 0
     var i = 1
@@ -44,7 +44,7 @@ object BrownianBridge:
       rightIndex(i) = k
       leftWeight(i) = (k - l) / (k + 1.0 - j)
       rightWeight(i) = (l + 1.0 - j) / (k + 1.0 - j)
-      stddev(i) = sqrt((l + 1.0 - j) * (k - l) / (k + 1.0 - j))
+      stddev(i) = math.sqrt((l + 1.0 - j) * (k - l) / (k + 1.0 - j))
       j = k + 1
       if (j >= numberOfSteps) {
         j = 0
