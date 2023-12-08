@@ -17,7 +17,20 @@ trait NormalGen:
 
 object NormalGen:
 
-  def fromSobol(m: Int, n: Int, dirs: Sobol.DirectionNumbers): Either[Sobol.Error, NormalGen] =
+  trait Factory:
+    def apply(m: Int, n: Int): Either[derifree.Error, NormalGen]
+
+  object Factory:
+
+    def sobol(dirs: Sobol.DirectionNumbers): Factory = new Factory:
+      def apply(m: Int, n: Int): Either[Error, NormalGen] =
+        fromSobol(m, n, dirs)
+
+  def fromSobol(
+      m: Int,
+      n: Int,
+      dirs: Sobol.DirectionNumbers
+  ): Either[Sobol.Error, NormalGen] =
     Sobol(m * n, dirs).map: sobol =>
       val bbt = BrownianBridge.transform(m * n)
       new NormalGen:

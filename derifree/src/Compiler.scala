@@ -10,7 +10,7 @@ import scala.math.Fractional.Implicits.*
 
 import Compiler.*
 
-trait Compiler[T]:
+private[derifree] trait Compiler[T]:
 
   def run[V: Fractional: Monoid](dsl: Dsl[T], simulator: Simulator[T])(
       rv: dsl.RV[V]
@@ -29,7 +29,7 @@ trait Compiler[T]:
       sim: Simulation.Realization[T]
   ): dsl.RVA ~> ([A] =>> Either[Error, A])
 
-object Compiler:
+private[derifree] object Compiler:
 
   enum Error extends derifree.Error:
     case Generic(override val getMessage: String)

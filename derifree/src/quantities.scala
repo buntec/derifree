@@ -1,11 +1,24 @@
 package derifree
 
+import cats.*
+
+import scala.annotation.targetName
+
+private val doubleOrdering: Ordering[Double] = Ordering[Double]
+private val doubleFractional = Fractional[Double]
+private val doubleMonoid = Monoid[Double]
+private val longOrdering: Ordering[Long] = Ordering[Long]
+
 /** Present value */
 opaque type PV = Double
 
 object PV {
 
   def apply(pv: Double): PV = pv
+
+  given Fractional[PV] = doubleFractional
+
+  given Monoid[PV] = doubleMonoid
 
   extension (pv: PV)
     def toDouble: Double = pv
@@ -28,8 +41,6 @@ object Rate:
 
 opaque type YearFraction = Double
 
-private val doubleOrdering: Ordering[Double] = Ordering[Double]
-
 object YearFraction:
 
   def apply(t: Double): YearFraction = t
@@ -47,17 +58,15 @@ object YearFraction:
     def toDouble: Double = t
     def -(rhs: YearFraction): YearFraction = t - rhs
     def <(rhs: YearFraction): Boolean = t < rhs
-    def add(rhs: YearFraction): YearFraction = t + rhs
     def +(rhs: YearFraction): YearFraction = t + rhs
     def *(a: Double): YearFraction = t * a
     def *(n: Int): YearFraction = t * n
     def *(n: Long): YearFraction = t * n
-    def ratio(rhs: YearFraction): Double = t / rhs
+    @targetName("multByRate") def *(r: Rate): Double = t * r
     def /(n: Int): YearFraction = t / n
+    def /(yf: YearFraction): Double = t / yf
 
 opaque type Tick = Long
-
-private val longOrdering: Ordering[Long] = Ordering[Long]
 
 object Tick:
 

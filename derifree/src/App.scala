@@ -27,12 +27,21 @@ object Main extends IOApp.Simple:
       val nSims = 65535 // 32767
 
       val sim: Simulator[YearFraction] =
-        Simulator
-          .blackScholes[YearFraction](nSims, dirNums)(refTime, spots, vols, correlations, rate)
+        Simulator.blackScholes[YearFraction](
+          TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+          NormalGen.Factory.sobol(dirNums),
+          nSims,
+          refTime,
+          spots,
+          vols,
+          correlations,
+          rate
+        )
 
       val dsl = Dsl[YearFraction]
 
       import dsl.*
+      import math.{min, max}
 
       val strike = 1.0
       val expiry = YearFraction(1.0)
@@ -52,17 +61,17 @@ object Main extends IOApp.Simple:
             expiry
           )
         )
-        payout <- cashflow(math.max(0.0, strike - math.min(s1 / s1_0, s2 / s2_0)), settlement)
+        payout <- cashflow(max(0.0, strike - min(s1 / s1_0, s2 / s2_0)), settlement)
       } yield payout * pHit
 
       val compiler = Compiler[YearFraction]
 
       val price =
-        IO.defer(IO.fromEither(compiler.run(dsl, sim)(worstOfDip.map(_.toDouble)))).timed
+        IO.defer(IO.fromEither(compiler.run(dsl, sim)(worstOfDip))).timed
 
       price
         .flatMap((d, p) => IO.println(s"price = $p, duration = ${d.toMillis} ms"))
-        .replicateA_(1000)
+        .replicateA_(100)
 
     }
 

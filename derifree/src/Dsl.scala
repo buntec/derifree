@@ -1,9 +1,11 @@
 package derifree
 
+import cats.Monoid
 import cats.free.Free
 import cats.free.Free.*
 
 trait Dsl[T]:
+  self =>
 
   import Barrier.*
   enum Barrier:
@@ -45,6 +47,13 @@ trait Dsl[T]:
 
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
+
+  extension [A](rva: RV[A])
+    def mean(
+        simulator: Simulator[T]
+    )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
+      val compiler = Compiler[T]
+      compiler.run(self, simulator)(rva)
 
 object Dsl:
 
