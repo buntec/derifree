@@ -63,8 +63,9 @@ private object Hill:
     if (z <= con) {
       value = 0.5 - z * (p - q * y / (y + a1 + b1 / (y + a2 + b2 / (y + a3))))
     } else {
-      value =
-        r * math.exp(-y) / (z + c1 + d1 / (z + c2 + d2 / (z + c3 + d3 / (z + c4 + d4 / (z + c5 + d5 / (z + c6))))))
+      value = r * math.exp(
+        -y
+      ) / (z + c1 + d1 / (z + c2 + d2 / (z + c3 + d3 / (z + c4 + d4 / (z + c5 + d5 / (z + c6))))))
     }
 
     if (!up) {

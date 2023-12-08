@@ -32,13 +32,16 @@ object Forward:
     // R(t) evaluated at all div times: R(\tau_1), ..., R(\tau_n)
     val rs: List[Double] =
       val div0 = divs.head
-      val r0 = (1 - div0.prop) * borrow.discountFactor(div0.exDiv) / discount.discountFactor(div0.exDiv)
+      val r0 = (1 - div0.prop) * borrow.discountFactor(div0.exDiv) / discount.discountFactor(
+        div0.exDiv
+      )
       (divs zip divs.tail).scanLeft(r0):
         case (acc, (div1, div2)) =>
-          acc * (1 - div2.prop) * borrow.discountFactor(div1.exDiv, div2.exDiv) / discount.discountFactor(
-            div1.exDiv,
-            div2.exDiv
-          )
+          acc * (1 - div2.prop) * borrow.discountFactor(div1.exDiv, div2.exDiv) / discount
+            .discountFactor(
+              div1.exDiv,
+              div2.exDiv
+            )
 
     // the dividend floor D(t) = \sum_{j: \tau_j > t} \alph_j / R(t, \tau_j)
     // we use the fact that R(t, \tau_j) = R(\tau_j) / R(t)
