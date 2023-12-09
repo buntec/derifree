@@ -43,6 +43,8 @@ object Simulator:
           .map(_.toMap)
 
         val ts = timeGrid.yearFractions
+        // println(s"time grid: $ts")
+
         val dts = timeGrid.deltas
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length

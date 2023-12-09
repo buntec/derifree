@@ -102,3 +102,12 @@ object Vol:
     def toDouble: Double = v
     def +(rhs: Vol): Vol = v + rhs
     def *(rhs: Vol): Var = v * rhs
+
+trait QuantitiesSyntax:
+
+  extension (x: Double)
+    def pv: PV = PV(x)
+    def vol: Vol = Vol(x)
+    def `var`: Var = Var(x)
+    def rate: Rate = Rate(x)
+    def yf: YearFraction = YearFraction(x)

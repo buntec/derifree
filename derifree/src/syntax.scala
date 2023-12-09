@@ -1,3 +1,3 @@
 package derifree
 
-object syntax extends TimeLikeSyntax
+object syntax extends TimeLikeSyntax with QuantitiesSyntax

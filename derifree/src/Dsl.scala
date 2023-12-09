@@ -49,6 +49,9 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
+  def min(x: Double*): Double = x.min
+  def max(x: Double*): Double = x.max
+
   extension [A](rva: RV[A])
     def mean(
         simulator: Simulator[T]
