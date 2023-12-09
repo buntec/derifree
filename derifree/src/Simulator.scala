@@ -7,8 +7,6 @@ import derifree.Simulation.Spec
 import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.collection.immutable.ArraySeq
-import org.ejml.data.DMatrixRMaj
-import org.ejml.dense.row.factory.DecompositionFactory_DDRM
 
 trait Simulator[T]:
 
@@ -20,38 +18,6 @@ object Simulator:
 
   enum Error extends derifree.Error:
     case MissingTimeIndex
-
-  private def cholesky(
-      corrs: Map[(String, String), Double],
-      udls: List[String]
-  ): IndexedSeq[IndexedSeq[Double]] =
-    val udlsArr = udls.toArray
-    val n = udlsArr.length
-
-    val data = for {
-      udl1 <- udls
-      udl2 <- udls
-    } yield
-      if (udl1 == udl2) then 1.0 else corrs.get((udl1, udl2)).getOrElse(corrs((udl2, udl1)))
-
-    val mat = new DMatrixRMaj(udlsArr.length, udlsArr.length, true, data*)
-    val decomp = DecompositionFactory_DDRM.chol(true)
-    val success = decomp.decompose(mat)
-    if (!success) {
-      throw new RuntimeException("cholesky decomp failed")
-    }
-    val lower = decomp.getT(null)
-    val res = Array.ofDim[Double](n, n)
-    var i = 0
-    while (i < n) {
-      var j = 0
-      while (j < n) {
-        res(i)(j) = lower.get(i, j)
-        j += 1
-      }
-      i += 1
-    }
-    ArraySeq.unsafeWrapArray(res.map(row => ArraySeq.unsafeWrapArray(row)))
 
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
@@ -84,12 +50,11 @@ object Simulator:
         val vols0 = udls.map(udl => vols(udl)).toArray
         val r = rate.toDouble
 
-        val chol = cholesky(correlations, udls)
-
         (
           normalGenFactory(nUdl, nt - 1),
+          utils.cholesky(correlations, udls),
           Either.fromOption(timeIndexMaybe, Error.MissingTimeIndex)
-        ).mapN: (normalGen, timeIndex) =>
+        ).mapN: (normalGen, w, timeIndex) =>
 
           val jumps = Array.ofDim[Double](nUdl, nt)
           val vols = Array.ofDim[Double](nUdl, nt)
@@ -99,8 +64,6 @@ object Simulator:
 
           val spotObsIndices =
             udls.map(udl => spec.spotObs(udl).toList.map(timeIndex).sorted.toArray).toArray
-
-          // println(spotObsIndices.show)
 
           var i = 0
           while (i < nUdl) {
@@ -131,8 +94,8 @@ object Simulator:
                 while (i < nUdl) {
                   z(i) = 0
                   var k = 0
-                  while (k < i) {
-                    z(i) += z0(k)(j) * chol(i)(k)
+                  while (k <= i) {
+                    z(i) += z0(k)(j) * w(i)(k)
                     k += 1
                   }
                   i += 1

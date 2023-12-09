@@ -53,8 +53,7 @@ trait Dsl[T]:
     def mean(
         simulator: Simulator[T]
     )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
-      val compiler = Compiler[T]
-      compiler.run(self, simulator)(rva)
+      Compiler[T].mean(self, simulator)(rva)
 
 object Dsl:
 

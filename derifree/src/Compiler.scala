@@ -10,21 +10,22 @@ import scala.math.Fractional.Implicits.*
 
 import Compiler.*
 
-private[derifree] trait Compiler[T]:
+private[derifree] sealed trait Compiler[T]:
 
-  def run[V: Fractional: Monoid](dsl: Dsl[T], simulator: Simulator[T])(
+  def mean[V: Fractional: Monoid](dsl: Dsl[T], simulator: Simulator[T])(
       rv: dsl.RV[V]
-  ): Either[derifree.Error, V] = {
-    val log = rv.foldMap(toSpec(dsl)).run(0)
-    simulator(log).flatMap(sims =>
+  ): Either[derifree.Error, V] =
+    simulator(spec(dsl)(rv)).flatMap(sims =>
       val (sumE, n) = sims.foldMapM(sim => (rv.foldMap(toValue(dsl, sim)), Fractional[V].one))
       sumE.map(_ / n)
     )
-  }
 
-  def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])
+  def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
+    rv.foldMap(toSpec(dsl)).run(0)
 
-  def toValue(
+  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])
+
+  protected def toValue(
       dsl: Dsl[T],
       sim: Simulation.Realization[T]
   ): dsl.RVA ~> ([A] =>> Either[Error, A])
