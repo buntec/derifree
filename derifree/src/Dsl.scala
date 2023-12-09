@@ -10,16 +10,16 @@ trait Dsl[T]:
   import Barrier.*
   enum Barrier:
     case Continuous(
-        direction: Barrier.Direction,
-        policy: Barrier.Policy,
+        direction: Direction,
         levels: Map[String, Double],
         from: T,
-        to: T
+        to: T,
+        policy: Policy = Policy.Or
     )
     case Discrete(
-        direction: Barrier.Direction,
-        policy: Barrier.Policy,
-        levels: Map[String, List[(T, Double)]]
+        direction: Direction,
+        levels: Map[String, List[(T, Double)]],
+        policy: Policy = Policy.Or
     )
 
   object Barrier:

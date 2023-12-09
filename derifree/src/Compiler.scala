@@ -59,7 +59,7 @@ private[derifree] object Compiler:
             case dsl.Cashflow(amount, time) =>
               Writer(Simulation.Spec.discountObs(time), PV(1.0))
 
-            case dsl.HitProb(dsl.Barrier.Discrete(_, _, levels)) =>
+            case dsl.HitProb(dsl.Barrier.Discrete(_, levels, _)) =>
               Writer(
                 levels.toList.foldMap((ticker, obs) =>
                   Simulation.Spec.spotObs(ticker, obs.map(_(0)).toSet)
@@ -67,7 +67,7 @@ private[derifree] object Compiler:
                 0.5
               )
 
-            case dsl.HitProb(dsl.Barrier.Continuous(_, _, levels, from, to)) =>
+            case dsl.HitProb(dsl.Barrier.Continuous(_, levels, from, to, _)) =>
               Writer(
                 levels.keys.toList.foldMap(ticker =>
                   Simulation.Spec.spotObs(
@@ -109,7 +109,7 @@ private[derifree] object Compiler:
                 Error.Generic(s"missing time index for $time")
               )
 
-            case dsl.HitProb(dsl.Barrier.Discrete(direction, policy, levels)) =>
+            case dsl.HitProb(dsl.Barrier.Discrete(direction, levels, policy)) =>
               (
                 levels.keys.toList
                   .traverse(ticker =>
@@ -171,8 +171,8 @@ private[derifree] object Compiler:
 
               }
 
-            case dsl.HitProb(dsl.Barrier.Continuous(direction, policy, levels, from, to)) =>
-              Either.raiseUnless(policy == dsl.Barrier.Policy.Or)(
+            case dsl.HitProb(dsl.Barrier.Continuous(direction, levels, from, to, policy)) =>
+              Either.raiseUnless(levels.size <= 1 || policy == dsl.Barrier.Policy.Or)(
                 Error.Generic("Only `or` barriers are supported for continuous monitoring")
               ) *>
                 (

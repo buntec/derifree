@@ -57,10 +57,10 @@ object Main extends IOApp.Simple:
           pHit <- hitProb(
             Barrier.Continuous(
               Barrier.Direction.Down,
-              Barrier.Policy.Or,
               Map("AAPL" -> 200.0, "META" -> 80.0),
               refTime,
-              expiry
+              expiry,
+              Barrier.Policy.Or
             )
           )
           payout <- cashflow(max(0.0, strike - min(s1 / s1_0, s2 / s2_0)), settlement)
