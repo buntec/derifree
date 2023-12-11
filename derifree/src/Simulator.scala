@@ -11,7 +11,9 @@ import scala.collection.immutable.ArraySeq
 trait Simulator[T]:
 
   def apply(
-      spec: Simulation.Spec[T]
+      spec: Simulation.Spec[T],
+      nSims: Int,
+      offset: Int
   ): Either[derifree.Error, LazyList[Simulation.Realization[T]]]
 
 object Simulator:
@@ -22,7 +24,6 @@ object Simulator:
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
       normalGenFactory: NormalGen.Factory,
-      nSimulations: Int,
       refTime: T,
       spots: Map[String, Double],
       vols: Map[String, Vol],
@@ -30,7 +31,11 @@ object Simulator:
       rate: Rate
   ): Simulator[T] =
     new Simulator[T]:
-      def apply(spec: Spec[T]): Either[derifree.Error, LazyList[Realization[T]]] =
+      def apply(
+          spec: Spec[T],
+          nSims: Int,
+          offset: Int
+      ): Either[derifree.Error, LazyList[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
         val nUdl = udls.length
         val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
@@ -85,8 +90,8 @@ object Simulator:
 
           val z = Array.ofDim[Double](nUdl)
 
-          LazyList.unfold((0, normalGen.init)): (count, normalState) =>
-            if count < nSimulations then
+          LazyList.unfold((0, normalGen.init(offset))): (count, normalState) =>
+            if count < nSims then
               val (nextNormalState, z0) = normalGen.next.run(normalState).value
 
               var j = 0

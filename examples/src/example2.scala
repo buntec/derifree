@@ -41,13 +41,10 @@ object Main extends IOApp.Simple:
       val correlations = Map(("AAPL", "META") -> 0.7)
       val rate = 0.04.rate
 
-      val nSims = (1 << 16) - 1
-
       val sim: Simulator[YearFraction] =
         Simulator.blackScholes[YearFraction](
           TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
           NormalGen.Factory.sobol(dirNums),
-          nSims,
           refTime,
           spots,
           vols,
@@ -55,9 +52,11 @@ object Main extends IOApp.Simple:
           rate
         )
 
+      val nSims = (1 << 16) - 1
+
       val priceAndPrint = IO.delay:
         val t1 = System.nanoTime()
-        val price = worstOfDip.mean(sim)
+        val price = worstOfDip.mean(sim, nSims)
         val t2 = System.nanoTime()
         println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 

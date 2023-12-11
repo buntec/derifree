@@ -73,13 +73,10 @@ object Main extends IOApp.Simple:
           Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
         val rate = 0.05.rate
 
-        val nSims = (1 << 16) - 1
-
         val sim: Simulator[java.time.Instant] =
           Simulator.blackScholes(
             TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
             NormalGen.Factory.sobol(dirNums),
-            nSims,
             refTime,
             spots,
             vols,
@@ -87,9 +84,11 @@ object Main extends IOApp.Simple:
             rate
           )
 
+        val nSims = (1 << 16) - 1
+
         def printPrice[A: Fractional: Monoid](rv: RV[A]) = IO:
           val t1 = System.nanoTime()
-          val price = rv.mean(sim)
+          val price = rv.mean(sim, nSims)
           val t2 = System.nanoTime()
           println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 

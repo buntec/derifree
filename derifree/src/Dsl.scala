@@ -33,6 +33,8 @@ trait Dsl[T]:
   case class Spot(ticker: String, time: T) extends RVA[Double]
   case class Cashflow(amount: Double, time: T) extends RVA[PV]
   case class HitProb(barrier: Barrier) extends RVA[Double]
+  case class Exerciseable(amount: Double, time: T) extends RVA[Unit]
+  case class Callable(amount: Double, time: T) extends RVA[Unit]
 
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
@@ -49,14 +51,26 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
+  def exerciseable(amount: Double, time: T): RV[Unit] =
+    liftF[RVA, Unit](Exerciseable(amount, time))
+
+  /** Alias for `exerciseable`. */
+  def puttable(amount: Double, time: T): RV[Unit] =
+    liftF[RVA, Unit](Exerciseable(amount, time))
+
+  def callable(amount: Double, time: T): RV[Unit] =
+    liftF[RVA, Unit](Callable(amount, time))
+
   def min(x: Double*): Double = x.min
   def max(x: Double*): Double = x.max
 
   extension [A](rva: RV[A])
     def mean(
-        simulator: Simulator[T]
+        simulator: Simulator[T],
+        nSims: Int,
+        offset: Int = 0
     )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
-      Compiler[T].mean(self, simulator)(rva)
+      Compiler[T].mean(self, simulator, nSims, offset, rva)
 
 object Dsl:
 
