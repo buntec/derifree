@@ -27,7 +27,7 @@ private[derifree] sealed trait Compiler[T]:
       sumE.map(_ / n)
     )
 
-  def eval[A](dsl: Dsl[T], sim: Simulation.Realization[T], rv: dsl.RV[A]): Either[Error, A] = 
+  def eval[A](dsl: Dsl[T], sim: Simulation.Realization[T], rv: dsl.RV[A]): Either[Error, A] =
     rv.foldMap(toValue(dsl, sim)).value
 
   def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
@@ -39,32 +39,46 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       offset: Int = 0,
       rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] = 
+  )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.apply
     simulator(spec(dsl)(rv), nSims, offset).flatMap: sims0 =>
-        val sims = sims0.toList // force evaluation of LazyList
-        val n = sims.length
-        val spec0 = spec(dsl)(rv)
-        val callDates = spec0.callDates.toList.sorted
-        val facRvs = factorRvs(dsl)(rv)
-        (callDates zip facRvs).reverse.foldLeftM((List.fill(n)(0.0), Map.empty[T, Lsm.Estimator])){ case ((futCFs, estimators), (callDate, factorRv)) =>
-          val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
-            for
-              profile <- rv.foldMap(toValue(dsl, sim)).written
-              factors <- eval(dsl, sim, factorRv)
-            yield 
-              val nextCallDateMaybe = callDates.find(_ > callDate)
-              val contValue = profile.cashflows.filter((t, _) => t > callDate && nextCallDateMaybe.forall(t < _)).map(_(1)).sum + futCf
-              val callAmount = profile.callAmounts.find((t, _) => t == callDate).get(1)
-              (factors, contValue, callAmount)
-          val estimatorE = rowsE.map(rows => lsm0.toContValueEstimator(rows.map((factors, contValues, _) => (factors, contValues))))
-          val nextFutCfs = estimatorE.flatMap(estimator => rowsE.map(rows =>
-              rows.map((factors, futCf, callAmount) =>
+      val sims = sims0.toList // force evaluation of LazyList
+      val n = sims.length
+      val spec0 = spec(dsl)(rv)
+      val callDates = spec0.callDates.toList.sorted
+      val facRvs = factorRvs(dsl)(rv)
+      (callDates zip facRvs).reverse
+        .foldLeftM((List.fill(n)(0.0), Map.empty[T, Lsm.Estimator])) {
+          case ((futCFs, estimators), (callDate, factorRv)) =>
+            val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
+              for
+                profile <- rv.foldMap(toValue(dsl, sim)).written
+                factors <- eval(dsl, sim, factorRv)
+              yield
+                val nextCallDateMaybe = callDates.find(_ > callDate)
+                val contValue = profile.cashflows
+                  .filter((t, _) => t > callDate && nextCallDateMaybe.forall(t < _))
+                  .map(_(1))
+                  .sum + futCf
+                val callAmount = profile.callAmounts.find((t, _) => t == callDate).get(1)
+                (factors, contValue, callAmount)
+            val estimatorE = rowsE.map(rows =>
+              lsm0.toContValueEstimator(
+                rows.map((factors, contValues, _) => (factors, contValues))
+              )
+            )
+            val nextFutCfs = estimatorE.flatMap(estimator =>
+              rowsE.map(rows =>
+                rows.map((factors, futCf, callAmount) =>
                   if estimator(factors) > callAmount then callAmount else futCf
-              )))
-          (nextFutCfs, estimatorE).mapN((futCfs, estimator) =>
-          (futCfs, estimators + (callDate -> estimator)))
-        }.map(_(1))
+                )
+              )
+            )
+            (nextFutCfs, estimatorE).mapN((futCfs, estimator) =>
+              (futCfs, estimators + (callDate -> estimator))
+            )
+        }
+        .map(_(1))
 
   private def factorRvs[A](dsl: Dsl[T])(rv: dsl.RV[A])(using
       TimeLike[T]
@@ -93,7 +107,6 @@ private[derifree] sealed trait Compiler[T]:
   ): dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A])
 
   protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A])
-
 
 private[derifree] object Compiler:
 
@@ -176,8 +189,7 @@ private[derifree] object Compiler:
                 WriterT.liftF(
                   Either
                     .fromOption(
-                      sim.timeIndex
-                        .get(time),
+                      sim.timeIndex.get(time),
                       Error.Generic(s"missing time index for $time")
                     )
                     .flatMap(i =>
@@ -203,70 +215,67 @@ private[derifree] object Compiler:
 
               case dsl.HitProb(dsl.Barrier.Discrete(direction, levels, policy)) =>
                 WriterT.liftF(
-                (
-                  levels.keys.toList
-                    .traverse(ticker =>
-                      Either
-                        .fromOption(
-                          sim.spots.get(ticker),
-                          Error.Generic(s"missing spots for $ticker")
-                        )
-                        .tupleLeft(ticker)
-                    )
-                    .map(_.toMap),
-                  levels.keys.toList
-                    .traverse(ticker =>
-                      Either
-                        .fromOption(
-                          sim.jumps.get(ticker),
-                          Error.Generic(s"missing jumps for $ticker")
-                        )
-                        .tupleLeft(ticker)
-                    )
-                    .map(_.toMap),
-                  levels.keys.toList
-                    .traverse(ticker =>
-                      Either
-                        .fromOption(
-                          sim.vols.get(ticker),
-                          Error.Generic(s"missing vols for $ticker")
-                        )
-                        .tupleLeft(ticker)
-                    )
-                    .map(_.toMap),
-                ).mapN { case (spots, jumps, vols) =>
-                  val sign = direction match {
-                    case dsl.Barrier.Direction.Up   => 1
-                    case dsl.Barrier.Direction.Down => -1
-                  }
-
-                  policy match
-                    case dsl.Barrier.Policy.And =>
-                      val hitTimes = levels
-                        .map((ticker, obs) =>
-                          ticker -> obs
-                            .filter((time, level) =>
-                              sign * (spots(ticker)(sim.timeIndex(time)) - level) >= 0
-                            )
-                            .map(_(0))
-                            .toSet
-                        )
-                        .values
-                        .reduce(_ intersect _)
-                      if hitTimes.nonEmpty then 1.0 else 0.0
-                    case dsl.Barrier.Policy.Or =>
-                      val hit = levels.exists((ticker, obs) =>
-                        obs.exists((time, level) =>
-                          sign * (spots(ticker)(sim.timeIndex(time)) - level) >= 0
-                        )
+                  (
+                    levels.keys.toList
+                      .traverse(ticker =>
+                        Either
+                          .fromOption(
+                            sim.spots.get(ticker),
+                            Error.Generic(s"missing spots for $ticker")
+                          )
+                          .tupleLeft(ticker)
                       )
-                      if hit then 1.0 else 0.0
-
-                })
+                      .map(_.toMap),
+                    levels.keys.toList
+                      .traverse(ticker =>
+                        Either
+                          .fromOption(
+                            sim.jumps.get(ticker),
+                            Error.Generic(s"missing jumps for $ticker")
+                          )
+                          .tupleLeft(ticker)
+                      )
+                      .map(_.toMap),
+                    levels.keys.toList
+                      .traverse(ticker =>
+                        Either
+                          .fromOption(
+                            sim.vols.get(ticker),
+                            Error.Generic(s"missing vols for $ticker")
+                          )
+                          .tupleLeft(ticker)
+                      )
+                      .map(_.toMap),
+                  ).mapN: (spots, jumps, vols) =>
+                    val sign = direction match {
+                      case dsl.Barrier.Direction.Up   => 1
+                      case dsl.Barrier.Direction.Down => -1
+                    }
+                    policy match
+                      case dsl.Barrier.Policy.And =>
+                        val hitTimes = levels
+                          .map((ticker, obs) =>
+                            ticker -> obs
+                              .filter((time, level) =>
+                                sign * (spots(ticker)(sim.timeIndex(time)) - level) >= 0
+                              )
+                              .map(_(0))
+                              .toSet
+                          )
+                          .values
+                          .reduce(_ intersect _)
+                        if hitTimes.nonEmpty then 1.0 else 0.0
+                      case dsl.Barrier.Policy.Or =>
+                        val hit = levels.exists((ticker, obs) =>
+                          obs.exists((time, level) =>
+                            sign * (spots(ticker)(sim.timeIndex(time)) - level) >= 0
+                          )
+                        )
+                        if hit then 1.0 else 0.0
+                )
 
               case dsl.HitProb(dsl.Barrier.Continuous(direction, levels, from, to, policy)) =>
-                WriterT.liftF(
-                Either.raiseUnless(levels.size <= 1 || policy == dsl.Barrier.Policy.Or)(
+                val e = Either.raiseUnless(levels.size <= 1 || policy == dsl.Barrier.Policy.Or)(
                   Error.Generic("Only `or` barriers are supported for continuous monitoring")
                 ) *>
                   (
@@ -319,7 +328,7 @@ private[derifree] object Compiler:
                           .tupleLeft(ticker)
                       )
                       .map(_.toMap),
-                  ).mapN { case (spotObsIdxs, spots, logSpots, jumps, vols) =>
+                  ).mapN: (spotObsIdxs, spots, logSpots, jumps, vols) =>
                     var p = 1.0 // survival probability
                     val sign = direction match {
                       case dsl.Barrier.Direction.Up   => -1
@@ -358,8 +367,9 @@ private[derifree] object Compiler:
                         i += 1
                       }
                     1 - p
-                  })
+                WriterT.liftF(e)
 
               case dsl.Exerciseable(_, _) => WriterT.liftF(Right(()))
 
-              case dsl.Callable(amount, time) => WriterT.put(())(Profile[T](Nil, List((time, amount))))
+              case dsl.Callable(amount, time) =>
+                WriterT.put(())(Profile[T](Nil, List((time, amount))))
