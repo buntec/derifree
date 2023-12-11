@@ -27,13 +27,42 @@ private[derifree] sealed trait Compiler[T]:
       sumE.map(_ / n)
     )
 
+  def meanByLsm[A](
+      dsl: Dsl[T],
+      simulator: Simulator[T],
+      nSimsLsm: Int,
+      nSims: Int,
+      rv: dsl.RV[A]
+  )(using TimeLike[T]): Either[derifree.Error, Double] =
+    val estimatorsMap = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
+    val facRvs = factorRvs(dsl)(rv)
+    val spec0 = spec(dsl)(rv)
+    val callDates = spec0.callDates.toList.sorted
+    val estimators = estimatorsMap.map(m => m.toList.sortBy(_(0)).map(_(1)))
+    val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
+      sims.foldMapM: sim =>
+        val factors = facRvs.traverse(rv => eval(dsl, sim, rv))
+        val profile = rv.foldMap(toValue(dsl, sim)).written
+        (estimators, factors, profile).mapN((est, facs, prof) =>
+          val callAmounts = prof.callAmounts.sortBy(_(0)).map(_(1))
+          val callDateAndAmount =
+            (callDates zip est zip facs zip callAmounts).collectFirstSome {
+              case (((t, est), fac), amount) =>
+                if est(fac) > amount then Some((t, amount)) else None
+            }
+          callDateAndAmount.fold(prof.cashflows.map(_(1)).sum)((t, amount) =>
+            amount + prof.cashflows.filter(_(0) < t).map(_(1)).sum
+          )
+        )
+    sumE.map(_ / nSims)
+
   def eval[A](dsl: Dsl[T], sim: Simulation.Realization[T], rv: dsl.RV[A]): Either[Error, A] =
     rv.foldMap(toValue(dsl, sim)).value
 
   def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
     rv.foldMap(toSpec(dsl)).run(0)
 
-  def toLsmEstimator[A: Fractional: Monoid](
+  def toLsmEstimator[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
@@ -94,9 +123,12 @@ private[derifree] sealed trait Compiler[T]:
         hitProbs <- barriers.traverse: barrier =>
           barrier match
             case Barrier.Continuous(direction, levels, from, to, policy) =>
-              hitProb(Barrier.Continuous(direction, levels, from, List(t, to).min))
+              if (from >= t) then pure(0.0)
+              else hitProb(Barrier.Continuous(direction, levels, from, min(t, to)))
             case Barrier.Discrete(direction, levels, policy) =>
-              hitProb(Barrier.Discrete(direction, levels, policy))
+              val filteredLevels =
+                levels.map((udl, obs) => udl -> obs.filter((tObs, _) => tObs > t))
+              hitProb(Barrier.Discrete(direction, filteredLevels, policy))
       yield (spots ++ hitProbs)
 
   protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])

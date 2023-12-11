@@ -3,6 +3,7 @@ package derifree
 import cats.Monoid
 import cats.free.Free
 import cats.free.Free.*
+import cats.Monad
 
 trait Dsl[T]:
   self =>
@@ -39,6 +40,8 @@ trait Dsl[T]:
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
 
+  def pure[A](a: A): RV[A] = Monad[RV].pure(a)
+
   def spot(ticker: String, time: T): RV[Double] =
     liftF[RVA, Double](Spot(ticker, time))
 
@@ -61,8 +64,9 @@ trait Dsl[T]:
   def callable(amount: Double, time: T): RV[Unit] =
     liftF[RVA, Unit](Callable(amount, time))
 
-  def min(x: Double*): Double = x.min
-  def max(x: Double*): Double = x.max
+  def min[A: Ordering](as: A*): A = as.min
+
+  def max[A: Ordering](as: A*): A = as.max
 
   extension [A](rva: RV[A])
     def mean(
