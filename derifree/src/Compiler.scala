@@ -33,39 +33,40 @@ private[derifree] sealed trait Compiler[T]:
   def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
     rv.foldMap(toSpec(dsl)).run(0)
 
-  def lsm[A: Fractional: Monoid](
+  def toLsmEstimator[A: Fractional: Monoid](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
       offset: Int = 0,
       rv: dsl.RV[A]
-  )(using TimeLike[T]) = simulator(spec(dsl)(rv), nSims, offset).flatMap: sims =>
+  )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] = 
+    val lsm0 = Lsm.apply
+    simulator(spec(dsl)(rv), nSims, offset).flatMap: sims0 =>
+        val sims = sims0.toList // force evaluation of LazyList
+        val n = sims.length
         val spec0 = spec(dsl)(rv)
         val callDates = spec0.callDates.toList.sorted
         val facRvs = factorRvs(dsl)(rv)
-        val blah = (callDates zip facRvs).reverse.foldLeft(Option.empty[List[Double]]){ case (futCFs, (callDate, factorRv)) =>
-          sims.map: sim =>
+        (callDates zip facRvs).reverse.foldLeftM((List.fill(n)(0.0), Map.empty[T, Lsm.Estimator])){ case ((futCFs, estimators), (callDate, factorRv)) =>
+          val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
             for
               profile <- rv.foldMap(toValue(dsl, sim)).written
               factors <- eval(dsl, sim, factorRv)
             yield 
-              val cfs = profile.cashflows.filter((t, _) => t > callDate)
-              ???
-          ???
-        }
-        ???
+              val nextCallDateMaybe = callDates.find(_ > callDate)
+              val contValue = profile.cashflows.filter((t, _) => t > callDate && nextCallDateMaybe.forall(t < _)).map(_(1)).sum + futCf
+              val callAmount = profile.callAmounts.find((t, _) => t == callDate).get(1)
+              (factors, contValue, callAmount)
+          val estimatorE = rowsE.map(rows => lsm0.toContValueEstimator(rows.map((factors, contValues, _) => (factors, contValues))))
+          val nextFutCfs = estimatorE.flatMap(estimator => rowsE.map(rows =>
+              rows.map((factors, futCf, callAmount) =>
+                  if estimator(factors) > callAmount then callAmount else futCf
+              )))
+          (nextFutCfs, estimatorE).mapN((futCfs, estimator) =>
+          (futCfs, estimators + (callDate -> estimator)))
+        }.map(_(1))
 
-
-  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])
-
-  protected def toValue(
-      dsl: Dsl[T],
-      sim: Simulation.Realization[T]
-  ): dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A])
-
-  protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A])
-
-  protected def factorRvs[A](dsl: Dsl[T])(rv: dsl.RV[A])(using
+  private def factorRvs[A](dsl: Dsl[T])(rv: dsl.RV[A])(using
       TimeLike[T]
   ): List[dsl.RV[List[Double]]] =
     val spec0 = spec(dsl)(rv)
@@ -83,6 +84,16 @@ private[derifree] sealed trait Compiler[T]:
             case Barrier.Discrete(direction, levels, policy) =>
               hitProb(Barrier.Discrete(direction, levels, policy))
       yield (spots ++ hitProbs)
+
+  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])
+
+  protected def toValue(
+      dsl: Dsl[T],
+      sim: Simulation.Realization[T]
+  ): dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A])
+
+  protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A])
+
 
 private[derifree] object Compiler:
 
