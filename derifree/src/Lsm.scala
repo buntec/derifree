@@ -64,7 +64,7 @@ object Lsm:
           .leftMap(t => Error.BadNumericsException(t.getMessage))
       yield
         val coeffs = x.data.toIndexedSeq
-        // println(s"coeff: $coeffs")
+        // println(s"coeffs: $coeffs")
         new Estimator:
           def apply(factors: IndexedSeq[Double]): Double =
             (toBasisFunctions(factors) zip coeffs).map(_ * _).sum

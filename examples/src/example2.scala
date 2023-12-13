@@ -11,7 +11,7 @@ val refTime = YearFraction.zero
 val expiry = YearFraction.oneYear
 val settle = expiry + YearFraction.oneDay * 2
 
-val worstOfDip: ContingentClaim = for
+val worstOfDip = for
   s1_0 <- spot("AAPL", refTime)
   s2_0 <- spot("META", refTime)
   s1 <- spot("AAPL", expiry)

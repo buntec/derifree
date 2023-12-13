@@ -9,29 +9,31 @@ val dsl = Dsl[java.time.Instant]
 import dsl.*
 
 val refTime = i"2023-01-01T18:00:00Z"
-val expiry = i"2024-01-01T18:00:00Z"
-val settle = i"2024-01-03T18:00:00Z"
+val expiry = refTime.plusDays(365)
+val settle = expiry.plusDays(2)
 
-val forward: ContingentClaim =
-  for
-    s0 <- spot("AAPL", refTime)
-    s <- spot("AAPL", expiry)
-    _ <- cashflow(s / s0, expiry)
-  yield ()
-
-val europeanVanillaCall: ContingentClaim = for
+val europeanVanillaCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(s / s0 - 1, 0), settle)
 yield ()
 
-val europeanVanillaPut: ContingentClaim = for
+val europeanVanillaPut = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(1 - s / s0, 0), settle)
 yield ()
 
-val europeanUpAndOutCall: ContingentClaim = for
+val bermudanVanillaPut = for
+  s0 <- spot("AAPL", refTime)
+  _ <- List(90, 180, 270, 360)
+    .map(refTime.plusDays)
+    .traverse_(d => spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0), d)))
+  s <- spot("AAPL", expiry)
+  _ <- cashflow(max(1 - s / s0, 0), settle)
+yield ()
+
+val europeanUpAndOutCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   p <- survivalProb(
@@ -43,7 +45,7 @@ val europeanUpAndOutCall: ContingentClaim = for
   _ <- cashflow(p * max(s / s0 - 1, 0), settle)
 yield ()
 
-val worstOfDownAndInPut: ContingentClaim = for
+val worstOfDownAndInPut = for
   s1_0 <- spot("AAPL", refTime)
   s2_0 <- spot("MSFT", refTime)
   s3_0 <- spot("GOOG", refTime)
@@ -61,7 +63,7 @@ val worstOfDownAndInPut: ContingentClaim = for
   _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
-val barrierReverseConvertible: ContingentClaim =
+val barrierReverseConvertible =
   val relBarrier = 0.7
   val callTimes =
     List(91, 181, 271).map(days => refTime.plus(java.time.Duration.ofDays(days)))
@@ -100,10 +102,10 @@ object Main extends IOApp.Simple:
       .directionNumbersFromResource[IO](5000)
       .flatMap: dirNums =>
         val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
-        val vols = Map("AAPL" -> 0.27.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
+        val vols = Map("AAPL" -> 0.37.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
         val correlations =
           Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
-        val rate = 0.01.rate
+        val rate = 0.05.rate
 
         val sim: Simulator[java.time.Instant] =
           Simulator.blackScholes(
@@ -129,11 +131,11 @@ object Main extends IOApp.Simple:
           val t4 = System.nanoTime()
           println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
 
-        for
-          // _ <- printPrice(forward)
-          // _ <- printPrice(europeanVanillaCall)
-          // _ <- printPrice(europeanVanillaPut)
-          // _ <- printPrice(europeanUpAndOutCall)
-          // _ <- printPrice(worstOfDownAndInPut)
-          _ <- printPrice(barrierReverseConvertible).replicateA_(10)
-        yield ()
+        (
+          printPrice(europeanVanillaCall),
+          printPrice(europeanVanillaPut),
+          printPrice(bermudanVanillaPut),
+          printPrice(europeanUpAndOutCall),
+          printPrice(worstOfDownAndInPut),
+          printPrice(barrierReverseConvertible)
+        ).tupled.void.replicateA_(10)

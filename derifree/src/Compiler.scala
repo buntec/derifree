@@ -54,17 +54,21 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, (PV, Map[T, Double])] =
-    val estimatorsMap = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
+    val estimatorsMapE = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
     val spec0 = spec(dsl)(rv)
     val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
     val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
-    val estimatorsE = estimatorsMap.map(_.toList.sortBy(_(0)).map(_(1)))
+    val estimatorsE = estimatorsMapE.flatMap(m =>
+      etDates.traverse(d =>
+        Either.fromOption(m.get(d), Error.Generic(s"missing estimator for $d"))
+      )
+    )
     val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
       sims.foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = rv.foldMap(toValue(dsl, sim)).written
         (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
-          val callDateAndAmount =
+          val earlyTerminationDateAndAmount =
             (etDates zip estimators zip factors).collectFirstSome:
               case ((t, estimator), fac) =>
                 val callAmountMaybe = profile.callAmounts.find(_(0) == t).map(_(1))
@@ -79,9 +83,10 @@ private[derifree] sealed trait Compiler[T]:
                     else None
                   case _ => None
 
-          callDateAndAmount.fold(profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int])(
-            (t, amount) =>
-              amount + profile.cashflows.filter(_(0) <= t).map(_(1)).sum -> Counter(t -> 1)
+          earlyTerminationDateAndAmount.fold(
+            profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int]
+          )((t, amount) =>
+            amount + profile.cashflows.filter(_(0) <= t).map(_(1)).sum -> Counter(t -> 1)
           )
         )
     sumE.map((pv, nEarlyTerminations) =>
