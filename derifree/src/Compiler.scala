@@ -2,7 +2,7 @@ package derifree
 
 import derifree.syntax.given
 import cats.data.Writer
-import cats.kernel.Monoid
+import cats.Monoid
 import cats.syntax.all.*
 import cats.~>
 import org.apache.commons.math3.util.{FastMath => math}
@@ -22,18 +22,33 @@ private[derifree] sealed trait Compiler[T]:
       offset: Int = 0,
       rv: dsl.RV[A]
   ): Either[derifree.Error, A] =
-    simulator(spec(dsl)(rv), nSims, offset).flatMap(sims =>
+    simulator(spec(dsl)(rv), nSims, offset).flatMap: sims =>
       val (sumE, n) = sims.foldMapM(sim => (eval(dsl, sim, rv), Fractional[A].one))
       sumE.map(_ / n)
-    )
 
-  def meanByLsm[A](
+  def fairValue[A](
+      dsl: Dsl[T],
+      simulator: Simulator[T],
+      nSims: Int,
+      offset: Int = 0,
+      rv: dsl.RV[A]
+  )(using TimeLike[T]): Either[derifree.Error, PV] =
+    val spec0 = spec(dsl)(rv)
+    if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
+      fairValueByLsm(dsl, simulator, nSims, offset, rv)
+    else
+      simulator(spec0, nSims, offset).flatMap: sims =>
+        val (sumE, n) =
+          sims.foldMapM(sim => (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1))
+        sumE.map(_.divideByInt(n))
+
+  private def fairValueByLsm[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSimsLsm: Int,
       nSims: Int,
       rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, Double] =
+  )(using TimeLike[T]): Either[derifree.Error, PV] =
     val estimatorsMap = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
     val facRvs = factorRvs(dsl)(rv)
     val spec0 = spec(dsl)(rv)
@@ -48,18 +63,30 @@ private[derifree] sealed trait Compiler[T]:
           val callDateAndAmount =
             (callDates zip estimators zip facs zip callAmounts).collectFirstSome {
               case (((t, estimator), fac), amount) =>
-                if estimator(fac.toIndexedSeq) > amount then Some((t, amount)) else None
+                if estimator(fac.toIndexedSeq) > amount.toDouble then Some((t, amount))
+                else None
             }
           callDateAndAmount.fold(prof.cashflows.map(_(1)).sum)((t, amount) =>
             amount + prof.cashflows.filter(_(0) < t).map(_(1)).sum
           )
         )
-    sumE.map(_ / nSims)
+    sumE.map(_.divideByInt(nSims))
 
-  def eval[A](dsl: Dsl[T], sim: Simulation.Realization[T], rv: dsl.RV[A]): Either[Error, A] =
+  private def eval[A](
+      dsl: Dsl[T],
+      sim: Simulation.Realization[T],
+      rv: dsl.RV[A]
+  ): Either[Error, A] =
     rv.foldMap(toValue(dsl, sim)).value
 
-  def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
+  private def profile[A](
+      dsl: Dsl[T],
+      sim: Simulation.Realization[T],
+      rv: dsl.RV[A]
+  ): Either[Error, Profile[T]] =
+    rv.foldMap(toValue(dsl, sim)).written
+
+  private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
     rv.foldMap(toSpec(dsl)).run(0)
 
   private def toLsmEstimator[A](
@@ -77,7 +104,7 @@ private[derifree] sealed trait Compiler[T]:
       val callDates = spec0.callDates.toList.sorted
       val facRvs = factorRvs(dsl)(rv)
       (callDates zip facRvs).reverse
-        .foldLeftM((List.fill(n)(0.0), Map.empty[T, Lsm.Estimator])) {
+        .foldLeftM((List.fill(n)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
           case ((futCFs, estimators), (callDate, factorRv)) =>
             val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
               for
@@ -93,13 +120,14 @@ private[derifree] sealed trait Compiler[T]:
                 (factors, contValue, callAmount)
             val estimatorE = rowsE.flatMap(rows =>
               lsm0.toContValueEstimator(
-                rows.map((factors, contValues, _) => (factors, contValues))
+                rows.map((factors, contValues, _) => (factors, contValues.toDouble))
               )
             )
             val nextFutCfs = estimatorE.flatMap(estimator =>
               rowsE.map(rows =>
                 rows.map((factors, futCf, callAmount) =>
-                  if estimator(factors.toIndexedSeq) > callAmount then callAmount else futCf
+                  if estimator(factors.toIndexedSeq) > callAmount.toDouble then callAmount
+                  else futCf
                 )
               )
             )
@@ -131,30 +159,35 @@ private[derifree] sealed trait Compiler[T]:
               hitProb(Barrier.Discrete(direction, filteredLevels, policy))
       yield (spots ++ hitProbs)
 
-  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])
+  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
 
   protected def toValue(
       dsl: Dsl[T],
       sim: Simulation.Realization[T]
-  ): dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A])
+  ): dsl.RVA ~> WriterT[Either[Error, _], Profile[T], _]
 
-  protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A])
+  protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> (Writer[List[dsl.Barrier], _])
 
 private[derifree] object Compiler:
 
   case class Profile[T](
-      cashflows: List[(T, Double)],
-      callAmounts: List[(T, Double)],
-      putAmounts: List[(T, Double)]
+      cashflows: List[(T, PV)],
+      callAmounts: List[(T, PV)],
+      putAmounts: List[(T, PV)]
   )
+
+  object Profile:
+    def cashflow[T](time: T, amount: PV) = Profile[T](List((time, amount)), Nil, Nil)
+    def callAmount[T](time: T, amount: PV) = Profile[T](Nil, List((time, amount)), Nil)
+    def putAmount[T](time: T, amount: PV) = Profile[T](Nil, Nil, List((time, amount)))
 
   given [T]: Monoid[Profile[T]] = new Monoid[Profile[T]]:
     def empty: Profile[T] = Profile[T](Nil, Nil, Nil)
     def combine(x: Profile[T], y: Profile[T]): Profile[T] =
       Profile[T](
-        x.cashflows <+> y.cashflows,
-        x.callAmounts <+> y.callAmounts,
-        x.putAmounts <+> y.putAmounts
+        x.cashflows |+| y.cashflows,
+        x.callAmounts |+| y.callAmounts,
+        x.putAmounts |+| y.putAmounts
       )
 
   enum Error extends derifree.Error:
@@ -172,13 +205,13 @@ private[derifree] object Compiler:
         scala.collection.mutable.HashMap.empty[(T, T), Either[Error, Array[Int]]]
 
       private def mkContBarrierObsTimes(from: T, to: T): Set[T] =
-        Set(from, to) <+> TimeLike[T].dailyStepsBetween(from, to).toSet
+        Set(from, to) |+| TimeLike[T].dailyStepsBetween(from, to).toSet
 
       private def getContBarrierObsTimes(from: T, to: T): Set[T] =
         contBarrierObsTimesCache.getOrElseUpdate((from, to), mkContBarrierObsTimes(from, to))
 
-      protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A]) =
-        new (dsl.RVA ~> ([A] =>> Writer[List[dsl.Barrier], A])):
+      protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
+        new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[List[dsl.Barrier], A] = fa match
             case dsl.HitProb(barrier)   => Writer(List(barrier), 0.5)
             case dsl.Cashflow(_, _)     => Writer.value(PV(1.0))
@@ -186,8 +219,8 @@ private[derifree] object Compiler:
             case dsl.Callable(_, _)     => Writer.value(())
             case dsl.Exerciseable(_, _) => Writer.value(())
 
-      def toSpec(dsl: Dsl[T]): dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A]) =
-        new (dsl.RVA ~> ([A] =>> Writer[Simulation.Spec[T], A])):
+      def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
+        new (dsl.RVA ~> Writer[Simulation.Spec[T], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[Simulation.Spec[T], A] = fa match
             case dsl.Spot(ticker, time) =>
               Writer(Simulation.Spec.spotObs(ticker, Set(time)), 1.0)
@@ -206,26 +239,26 @@ private[derifree] object Compiler:
             case dsl.HitProb(dsl.Barrier.Continuous(_, levels, from, to, _)) =>
               Writer(
                 levels.keys.toList.foldMap(ticker =>
-                  Simulation.Spec.spotObs(
-                    ticker,
-                    getContBarrierObsTimes(from, to)
-                  )
+                  Simulation.Spec.spotObs(ticker, getContBarrierObsTimes(from, to))
                 ),
                 0.5
               )
 
             case dsl.Exerciseable(_, time) =>
-              Writer(Simulation.Spec.exerciseDate(time), ())
+              Writer(
+                Simulation.Spec.exerciseDate(time) |+| Simulation.Spec.discountObs(time),
+                ()
+              )
 
             case dsl.Callable(_, time) =>
-              Writer(Simulation.Spec.callDate(time), ())
+              Writer(Simulation.Spec.callDate(time) |+| Simulation.Spec.discountObs(time), ())
 
       def toValue(
           dsl: Dsl[T],
           sim: Simulation.Realization[T]
-      ): dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A]) =
-        new (dsl.RVA ~> ([A] =>> WriterT[[B] =>> Either[Error, B], Profile[T], A])):
-          def apply[A](fa: dsl.RVA[A]): WriterT[[B] =>> Either[Error, B], Profile[T], A] =
+      ): dsl.RVA ~> WriterT[Either[Error, _], Profile[T], _] =
+        new (dsl.RVA ~> WriterT[Either[Error, _], Profile[T], _]):
+          def apply[A](fa: dsl.RVA[A]): WriterT[Either[Error, _], Profile[T], A] =
             fa match
               case dsl.Spot(ticker, time) =>
                 WriterT.liftF(
@@ -248,12 +281,14 @@ private[derifree] object Compiler:
                 )
 
               case dsl.Cashflow(amount, time) =>
-                WriterT.putT(
-                  Either.fromOption(
-                    sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
-                    Error.Generic(s"missing time index for $time")
-                  )
-                )(Profile[T](List((time, amount)), Nil, Nil))
+                WriterT(
+                  Either
+                    .fromOption(
+                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                      Error.Generic(s"missing time index for discount time $time")
+                    )
+                    .map(pv => (Profile.cashflow(time, pv), pv))
+                )
 
               case dsl.HitProb(dsl.Barrier.Discrete(direction, levels, policy)) =>
                 WriterT.liftF(
@@ -412,7 +447,21 @@ private[derifree] object Compiler:
                 WriterT.liftF(e)
 
               case dsl.Exerciseable(amount, time) =>
-                WriterT.put(())(Profile[T](Nil, Nil, List((time, amount))))
+                WriterT(
+                  Either
+                    .fromOption(
+                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                      Error.Generic(s"missing time index for discount time $time")
+                    )
+                    .map(pv => (Profile.callAmount(time, pv), ()))
+                )
 
               case dsl.Callable(amount, time) =>
-                WriterT.put(())(Profile[T](Nil, List((time, amount)), Nil))
+                WriterT(
+                  Either
+                    .fromOption(
+                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                      Error.Generic(s"missing time index for discount time $time")
+                    )
+                    .map(pv => (Profile.putAmount(time, pv), ()))
+                )

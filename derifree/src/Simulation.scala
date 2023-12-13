@@ -30,7 +30,7 @@ object Simulation:
 
     def callDate[T](time: T) = make(callDates = Set(time))
 
-    given monoid[T]: Monoid[Spec[T]] = new Monoid[Spec[T]]:
+    given [T]: Monoid[Spec[T]] = new Monoid[Spec[T]]:
       def empty: Spec[T] = make()
       def combine(x: Spec[T], y: Spec[T]): Spec[T] =
         // we cannot simply do <+> on spotObs b/c the

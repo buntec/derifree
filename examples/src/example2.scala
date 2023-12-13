@@ -11,7 +11,7 @@ val refTime = YearFraction.zero
 val expiry = YearFraction.oneYear
 val settle = expiry + YearFraction.oneDay * 2
 
-val worstOfDip: RV[PV] = for
+val worstOfDip: Payoff = for
   s1_0 <- spot("AAPL", refTime)
   s2_0 <- spot("META", refTime)
   s1 <- spot("AAPL", expiry)
@@ -25,8 +25,8 @@ val worstOfDip: RV[PV] = for
       Barrier.Policy.Or
     )
   )
-  payout <- cashflow(max(0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
-yield payout * pHit
+  _ <- cashflow(pHit * max(0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
+yield ()
 
 import cats.effect.*
 
@@ -56,7 +56,8 @@ object Main extends IOApp.Simple:
 
       val priceAndPrint = IO.delay:
         val t1 = System.nanoTime()
-        val price = worstOfDip.mean(sim, nSims)
+        // val price = worstOfDip.mean(sim, nSims)
+        val price = worstOfDip.fairValue(sim, nSims)
         val t2 = System.nanoTime()
         println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 

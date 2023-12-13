@@ -11,25 +11,26 @@ val refTime = i"2023-01-01T18:00:00Z"
 val expiry = i"2024-01-01T18:00:00Z"
 val settle = i"2024-01-03T18:00:00Z"
 
-val forward =
+val forward: Payoff =
   for
     s0 <- spot("AAPL", refTime)
     s <- spot("AAPL", expiry)
-  yield s / s0
+    _ <- cashflow(s / s0, expiry)
+  yield ()
 
-val europeanVanillaCall = for
+val europeanVanillaCall: Payoff = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  c <- cashflow(max(s / s0 - 1, 0), settle)
-yield c
+  _ <- cashflow(max(s / s0 - 1, 0), settle)
+yield ()
 
-val europeanVanillaPut = for
+val europeanVanillaPut: Payoff = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  c <- cashflow(max(1 - s / s0, 0), settle)
-yield c
+  _ <- cashflow(max(1 - s / s0, 0), settle)
+yield ()
 
-val europeanUpAndOutCall = for
+val europeanUpAndOutCall: Payoff = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   p <- survivalProb(
@@ -38,8 +39,8 @@ val europeanUpAndOutCall = for
       Map("AAPL" -> List((expiry, 1.2 * s0)))
     )
   )
-  c <- cashflow(max(s / s0 - 1, 0), settle)
-yield c * p
+  _ <- cashflow(p * max(s / s0 - 1, 0), settle)
+yield ()
 
 val worstOfDownAndInPut = for
   s1_0 <- spot("AAPL", refTime)
@@ -56,8 +57,8 @@ val worstOfDownAndInPut = for
       to = expiry
     )
   )
-  c <- cashflow(max(0, min(s1 / s1_0, s2 / s2_0, s3 / s3_0) - 1), settle)
-yield c * p
+  _ <- cashflow(p * max(0, min(s1 / s1_0, s2 / s2_0, s3 / s3_0) - 1), settle)
+yield ()
 
 import cats.effect.*
 import cats.*
@@ -86,9 +87,9 @@ object Main extends IOApp.Simple:
 
         val nSims = (1 << 16) - 1
 
-        def printPrice[A: Fractional: Monoid](rv: RV[A]) = IO:
+        def printPrice(payoff: Payoff) = IO:
           val t1 = System.nanoTime()
-          val price = rv.mean(sim, nSims)
+          val price = payoff.fairValue(sim, nSims)
           val t2 = System.nanoTime()
           println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 

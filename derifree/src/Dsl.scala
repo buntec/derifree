@@ -40,6 +40,8 @@ trait Dsl[T]:
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
 
+  type Payoff = RV[Unit]
+
   def pure[A](a: A): RV[A] = Monad[RV].pure(a)
 
   def spot(ticker: String, time: T): RV[Double] =
@@ -75,6 +77,14 @@ trait Dsl[T]:
         offset: Int = 0
     )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
       Compiler[T].mean(self, simulator, nSims, offset, rva)
+
+  extension (payoff: Payoff)
+    def fairValue(
+        simulator: Simulator[T],
+        nSims: Int,
+        offset: Int = 0
+    )(using TimeLike[T]): Either[derifree.Error, PV] =
+      Compiler[T].fairValue(self, simulator, nSims, offset, payoff)
 
 object Dsl:
 

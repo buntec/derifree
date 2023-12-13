@@ -24,6 +24,8 @@ object PV {
     def toDouble: Double = pv
     def *(a: Double): PV = a * pv
     def +(rhs: PV): PV = pv + rhs
+    def /(n: Int): PV = pv / n
+    def divideByInt(n: Int): PV = pv / n
 
 }
 
