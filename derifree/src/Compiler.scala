@@ -38,17 +38,17 @@ private[derifree] sealed trait Compiler[T]:
     val facRvs = factorRvs(dsl)(rv)
     val spec0 = spec(dsl)(rv)
     val callDates = spec0.callDates.toList.sorted
-    val estimators = estimatorsMap.map(m => m.toList.sortBy(_(0)).map(_(1)))
+    val estimatorsE = estimatorsMap.map(m => m.toList.sortBy(_(0)).map(_(1)))
     val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
       sims.foldMapM: sim =>
         val factors = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profile = rv.foldMap(toValue(dsl, sim)).written
-        (estimators, factors, profile).mapN((est, facs, prof) =>
+        (estimatorsE, factors, profile).mapN((estimators, facs, prof) =>
           val callAmounts = prof.callAmounts.sortBy(_(0)).map(_(1))
           val callDateAndAmount =
-            (callDates zip est zip facs zip callAmounts).collectFirstSome {
-              case (((t, est), fac), amount) =>
-                if est(fac) > amount then Some((t, amount)) else None
+            (callDates zip estimators zip facs zip callAmounts).collectFirstSome {
+              case (((t, estimator), fac), amount) =>
+                if estimator(fac.toIndexedSeq) > amount then Some((t, amount)) else None
             }
           callDateAndAmount.fold(prof.cashflows.map(_(1)).sum)((t, amount) =>
             amount + prof.cashflows.filter(_(0) < t).map(_(1)).sum
@@ -69,7 +69,7 @@ private[derifree] sealed trait Compiler[T]:
       offset: Int = 0,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
-    val lsm0 = Lsm.apply
+    val lsm0 = Lsm.fromPoly(2)
     simulator(spec(dsl)(rv), nSims, offset).flatMap: sims0 =>
       val sims = sims0.toList // force evaluation of LazyList
       val n = sims.length
@@ -91,7 +91,7 @@ private[derifree] sealed trait Compiler[T]:
                   .sum + futCf
                 val callAmount = profile.callAmounts.find((t, _) => t == callDate).get(1)
                 (factors, contValue, callAmount)
-            val estimatorE = rowsE.map(rows =>
+            val estimatorE = rowsE.flatMap(rows =>
               lsm0.toContValueEstimator(
                 rows.map((factors, contValues, _) => (factors, contValues))
               )
@@ -99,7 +99,7 @@ private[derifree] sealed trait Compiler[T]:
             val nextFutCfs = estimatorE.flatMap(estimator =>
               rowsE.map(rows =>
                 rows.map((factors, futCf, callAmount) =>
-                  if estimator(factors) > callAmount then callAmount else futCf
+                  if estimator(factors.toIndexedSeq) > callAmount then callAmount else futCf
                 )
               )
             )
@@ -142,12 +142,20 @@ private[derifree] sealed trait Compiler[T]:
 
 private[derifree] object Compiler:
 
-  case class Profile[T](cashflows: List[(T, Double)], callAmounts: List[(T, Double)])
+  case class Profile[T](
+      cashflows: List[(T, Double)],
+      callAmounts: List[(T, Double)],
+      putAmounts: List[(T, Double)]
+  )
 
   given profileMonoid[T]: Monoid[Profile[T]] = new Monoid[Profile[T]]:
-    def empty: Profile[T] = Profile[T](Nil, Nil)
+    def empty: Profile[T] = Profile[T](Nil, Nil, Nil)
     def combine(x: Profile[T], y: Profile[T]): Profile[T] =
-      Profile[T](x.cashflows ++ y.cashflows, x.callAmounts ++ y.callAmounts)
+      Profile[T](
+        x.cashflows <+> y.cashflows,
+        x.callAmounts <+> y.callAmounts,
+        x.putAmounts <+> y.putAmounts
+      )
 
   enum Error extends derifree.Error:
     case Generic(override val getMessage: String)
@@ -243,7 +251,7 @@ private[derifree] object Compiler:
                     sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
                     Error.Generic(s"missing time index for $time")
                   )
-                )(Profile[T](List((time, amount)), Nil))
+                )(Profile[T](List((time, amount)), Nil, Nil))
 
               case dsl.HitProb(dsl.Barrier.Discrete(direction, levels, policy)) =>
                 WriterT.liftF(
@@ -401,7 +409,8 @@ private[derifree] object Compiler:
                     1 - p
                 WriterT.liftF(e)
 
-              case dsl.Exerciseable(_, _) => WriterT.liftF(Right(()))
+              case dsl.Exerciseable(amount, time) =>
+                WriterT.put(())(Profile[T](Nil, Nil, List((time, amount))))
 
               case dsl.Callable(amount, time) =>
-                WriterT.put(())(Profile[T](Nil, List((time, amount))))
+                WriterT.put(())(Profile[T](Nil, List((time, amount)), Nil))
