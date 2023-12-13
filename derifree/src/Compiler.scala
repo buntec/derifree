@@ -57,30 +57,38 @@ private[derifree] sealed trait Compiler[T]:
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, (PV, Map[T, Double])] =
     val estimatorsMap = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
-    val facRvs = factorRvs(dsl, simulator.refTime, rv)
     val spec0 = spec(dsl)(rv)
-    val callDates = spec0.callDates.toList.sorted
+    val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
+    val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
     val estimatorsE = estimatorsMap.map(_.toList.sortBy(_(0)).map(_(1)))
     val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
       sims.foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = rv.foldMap(toValue(dsl, sim)).written
         (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
-          val callAmounts = profile.callAmounts.sortBy(_(0)).map(_(1))
           val callDateAndAmount =
-            (callDates zip estimators zip factors zip callAmounts).collectFirstSome {
-              case (((t, estimator), fac), amount) =>
-                if estimator(fac.toIndexedSeq) > amount.toDouble then Some((t, amount))
-                else None
-            }
+            (etDates zip estimators zip factors).collectFirstSome:
+              case ((t, estimator), fac) =>
+                val callAmountMaybe = profile.callAmounts.find(_(0) == t).map(_(1))
+                val putAmountMaybe = profile.putAmounts.find(_(0) == t).map(_(1))
+                val estContValue = estimator(fac.toIndexedSeq)
+                (callAmountMaybe, putAmountMaybe) match
+                  case (Some(c), None) if c.toDouble < estContValue => Some((t, c))
+                  case (None, Some(p)) if p.toDouble > estContValue => Some((t, p))
+                  case (Some(c), Some(p)) =>
+                    if c.toDouble < estContValue then Some((t, c))
+                    else if p.toDouble > estContValue then Some((t, p))
+                    else None
+                  case _ => None
+
           callDateAndAmount.fold(profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int])(
             (t, amount) =>
               amount + profile.cashflows.filter(_(0) <= t).map(_(1)).sum -> Counter(t -> 1)
           )
         )
-    sumE.map((pv, nCalls) =>
-      pv.divideByInt(nSims) -> (nCalls |+| Counter(callDates.map(_ -> 0)*)).toMap.map((k, n) =>
-        k -> n.toDouble / nSims
+    sumE.map((pv, nEarlyTerminations) =>
+      pv.divideByInt(nSims) -> (nEarlyTerminations |+| Counter(etDates.map(_ -> 0)*)).toMap.map(
+        (k, n) => k -> n.toDouble / nSims
       )
     )
 
@@ -113,50 +121,58 @@ private[derifree] sealed trait Compiler[T]:
     simulator(spec0, nSims, offset).flatMap: sims0 =>
       val sims = sims0.toList // force evaluation of LazyList
       val n = sims.length
-      val callDates = spec0.callDates.toList.sorted
-      val facRvs = factorRvs(dsl, simulator.refTime, rv)
-      (callDates zip facRvs).reverse
+      val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
+      val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
+      (etDates zip facRvs).reverse
         .foldLeftM((List.fill(n)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
-          case ((futCFs, estimators), (callDate, factorRv)) =>
+          case ((futCFs, estimators), (etDate, factorRv)) =>
             val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
               for
                 profile <- rv.foldMap(toValue(dsl, sim)).written
                 factors <- eval(dsl, sim, factorRv)
               yield
-                val nextCallDateMaybe = callDates.find(_ > callDate)
+                val nextEtDateMaybe = etDates.find(_ > etDate)
                 val contValue = profile.cashflows
-                  .filter((t, _) => t > callDate && nextCallDateMaybe.forall(t < _))
+                  .filter((t, _) => t > etDate && nextEtDateMaybe.forall(t < _))
                   .map(_(1))
                   .sum + futCf
-                val callAmount = profile.callAmounts.find((t, _) => t == callDate).get(1)
-                (factors, contValue, callAmount)
+                val callAmount = profile.callAmounts.find((t, _) => t == etDate).map(_(1))
+                val putAmount = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
+                (factors, contValue, callAmount, putAmount)
             val estimatorE = rowsE.flatMap(rows =>
               lsm0.toContValueEstimator(
-                rows.map((factors, contValues, _) => (factors, contValues.toDouble))
+                rows.map((factors, contValues, _, _) => (factors, contValues.toDouble))
               )
             )
             val nextFutCfs = estimatorE.flatMap(estimator =>
               rowsE.map(rows =>
-                rows.map((factors, futCf, callAmount) =>
-                  if estimator(factors.toIndexedSeq) > callAmount.toDouble then callAmount
-                  else futCf
+                rows.map((factors, futCf, callAmount, putAmount) =>
+                  val estContValue = estimator(factors.toIndexedSeq)
+                  (callAmount, putAmount) match
+                    case (Some(c), None) if c.toDouble < estContValue => c
+                    case (None, Some(p)) if p.toDouble > estContValue => p
+                    case (Some(c), Some(p))                           =>
+                      // caller takes precedence
+                      if c.toDouble < estContValue then c
+                      else if p.toDouble > estContValue then p
+                      else futCf
+                    case _ => futCf
                 )
               )
             )
             (nextFutCfs, estimatorE).mapN((futCfs, estimator) =>
-              (futCfs, estimators + (callDate -> estimator))
+              (futCfs, estimators + (etDate -> estimator))
             )
         }
         .map(_(1))
 
-  private def factorRvs[A](dsl: Dsl[T], refTime: T, rv: dsl.RV[A])(using
+  private def factorRvs[A](dsl: Dsl[T], times: List[T], refTime: T, rv: dsl.RV[A])(using
       TimeLike[T]
   ): List[dsl.RV[List[Double]]] =
     val spec0 = spec(dsl)(rv)
     val barriers = rv.foldMap(toBarriers(dsl)).run(0)
     val udls = spec0.spotObs.keySet.toList.sorted
-    val callDates = spec0.callDates.toList.sorted
-    callDates.map: t =>
+    times.map: t =>
       import dsl.*
       for
         spots0 <- udls.traverse(udl => spot(udl, refTime))

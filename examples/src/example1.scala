@@ -117,7 +117,7 @@ object Main extends IOApp.Simple:
             rate
           )
 
-        val nSims = (1 << 16) - 1
+        val nSims = (1 << 15) - 1
 
         def printPrice(payoff: Payoff) = IO:
           val t1 = System.nanoTime()
