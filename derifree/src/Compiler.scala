@@ -62,7 +62,7 @@ private[derifree] sealed trait Compiler[T]:
   def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
     rv.foldMap(toSpec(dsl)).run(0)
 
-  def toLsmEstimator[A](
+  private def toLsmEstimator[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
@@ -148,7 +148,7 @@ private[derifree] object Compiler:
       putAmounts: List[(T, Double)]
   )
 
-  given profileMonoid[T]: Monoid[Profile[T]] = new Monoid[Profile[T]]:
+  given [T]: Monoid[Profile[T]] = new Monoid[Profile[T]]:
     def empty: Profile[T] = Profile[T](Nil, Nil, Nil)
     def combine(x: Profile[T], y: Profile[T]): Profile[T] =
       Profile[T](
@@ -160,6 +160,8 @@ private[derifree] object Compiler:
   enum Error extends derifree.Error:
     case Generic(override val getMessage: String)
 
+  // The implementation uses mutable state for performance,
+  // but this is never observable by clients.
   def apply[T: TimeLike]: Compiler[T] =
     new Compiler[T]:
 
