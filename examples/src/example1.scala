@@ -12,19 +12,19 @@ val refTime = i"2023-01-01T18:00:00Z"
 val expiry = refTime.plusDays(365)
 val settle = expiry.plusDays(2)
 
-val europeanVanillaCall = for
+val europeanCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(s / s0 - 1, 0), settle)
 yield ()
 
-val europeanVanillaPut = for
+val europeanPut = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(1 - s / s0, 0), settle)
 yield ()
 
-val bermudanVanillaPut = for
+val bermudanPut = for
   s0 <- spot("AAPL", refTime)
   _ <- List(90, 180, 270, 360)
     .map(refTime.plusDays)
@@ -66,9 +66,9 @@ yield ()
 val barrierReverseConvertible =
   val relBarrier = 0.7
   val callTimes =
-    List(91, 181, 271).map(days => refTime.plus(java.time.Duration.ofDays(days)))
+    List(90, 180, 270, 360).map(refTime.plusDays)
   val couponTimes =
-    List(90, 180, 270).map(days => refTime.plus(java.time.Duration.ofDays(days))) :+ expiry
+    List(91, 181, 271, 361).map(refTime.plusDays)
   for
     s1_0 <- spot("AAPL", refTime)
     s2_0 <- spot("MSFT", refTime)
@@ -132,9 +132,9 @@ object Main extends IOApp.Simple:
           println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
 
         (
-          printPrice(europeanVanillaCall),
-          printPrice(europeanVanillaPut),
-          printPrice(bermudanVanillaPut),
+          printPrice(europeanCall),
+          printPrice(europeanPut),
+          printPrice(bermudanPut),
           printPrice(europeanUpAndOutCall),
           printPrice(worstOfDownAndInPut),
           printPrice(barrierReverseConvertible)
