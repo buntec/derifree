@@ -51,7 +51,7 @@ import Sobol.*
  */
 trait Sobol:
 
-  def initialState: State
+  def initialState(offset: Int): State
 
   def next: cState[State, IndexedSeq[Double]]
 
@@ -93,8 +93,8 @@ object Sobol:
         new Sobol:
 
           // skip first dimension: (0,...,0)
-          def initialState: State =
-            next.runS(State(0, Array.ofDim[Int](dim).toIndexedSeq)).value
+          def initialState(offset: Int): State =
+            skipTo(offset + 1).runS(State(0, Array.ofDim[Int](dim).toIndexedSeq)).value
 
           def next: cState[State, IndexedSeq[Double]] =
             cState[State, IndexedSeq[Double]]: state =>

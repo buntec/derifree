@@ -8,12 +8,14 @@ trait NormalGen:
 
   type State
 
-  def init: State
+  def init(offset: Int): State
 
   def dimensions: (Int, Int)
 
   /** Nested `IndexedSeq` dimensions equal `dimensions`. */
   def next: cState[State, IndexedSeq[IndexedSeq[Double]]]
+
+  def skipTo(pos: Int): cState[State, Unit]
 
 object NormalGen:
 
@@ -38,7 +40,9 @@ object NormalGen:
 
         def dimensions: (Int, Int) = (m, n)
 
-        def init: State = sobol.initialState
+        def init(offset: Int): State = sobol.initialState(offset)
+
+        def skipTo(pos: Int): cState[State, Unit] = sobol.skipTo(pos)
 
         def next: cState[State, IndexedSeq[IndexedSeq[Double]]] =
           sobol.next.map: sobolNumbers =>

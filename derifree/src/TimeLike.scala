@@ -52,6 +52,8 @@ object TimeLike:
 
 trait TimeLikeSyntax:
 
+  given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
+
   extension [T: TimeLike](t: T)
     def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
     def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
