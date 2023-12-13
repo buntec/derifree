@@ -1,9 +1,9 @@
 package derifree
 
+import cats.Monad
 import cats.Monoid
 import cats.free.Free
 import cats.free.Free.*
-import cats.Monad
 
 trait Dsl[T]:
   self =>

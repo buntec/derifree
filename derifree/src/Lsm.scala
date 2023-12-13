@@ -101,10 +101,11 @@ object Lsm:
     while (j < 1000) {
       val t1 = System.nanoTime()
       var i = 0
+      var sum = 0.0
       while (i < 64000) {
         val lsm = fromPoly(2)
         val est = lsm.toContValueEstimator(rows).toOption.get
-        val y = est(IndexedSeq(0.4, 0.2))
+        sum += est(IndexedSeq(0.4, 0.2))
         i += 1
       }
       val t2 = System.nanoTime()

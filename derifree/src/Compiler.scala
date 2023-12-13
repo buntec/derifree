@@ -1,17 +1,17 @@
 package derifree
 
-import derifree.syntax.given
-import cats.data.Writer
 import cats.Monoid
+import cats.data.Writer
+import cats.data.WriterT
+import cats.free.Free
 import cats.syntax.all.*
 import cats.~>
+import derifree.syntax.given
 import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.math.Fractional.Implicits.*
 
 import Compiler.*
-import cats.free.Free
-import cats.data.WriterT
 
 private[derifree] sealed trait Compiler[T]:
 
