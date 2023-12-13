@@ -36,16 +36,18 @@ object Lsm:
         factors0 = rows.head(0)
         m = rows.length
         nCoeffs = toBasisFunctions(factors0.toIndexedSeq).length
+        data = rows.flatMap((factors, _) => toBasisFunctions(factors.toIndexedSeq))
         a <- Either
           .catchNonFatal(
             new DMatrixRMaj(
               m,
               nCoeffs,
               true,
-              rows.flatMap((factors, _) => toBasisFunctions(factors.toIndexedSeq))*
+              data*
             )
           )
           .leftMap(t => Error.BadInputs(t.getMessage))
+        // _ = println( s"rows = ${a.numRows}, cols = ${a.numCols}, data.length = ${data.length}, data = ${a.data.mkString(", ")}")
         b <- Either
           .catchNonFatal(new DMatrixRMaj(m, 1, true, rows.map(_(1))*))
           .leftMap(t => Error.BadInputs(t.getMessage))
@@ -53,17 +55,16 @@ object Lsm:
           .catchNonFatal(new DMatrixRMaj(nCoeffs, 1, true, Array.ofDim(nCoeffs)*))
           .leftMap(t => Error.BadInputs(t.getMessage))
         solver <- Either
-          .catchNonFatal(
-            LinearSolverFactory_DDRM.leastSquares(rows.length, nCoeffs)
-          )
+          .catchNonFatal(LinearSolverFactory_DDRM.leastSquaresQrPivot(true, false))
           .leftMap(t => Error.BadNumericsException(t.getMessage))
         success = solver.setA(a)
-        _ <- Either.raiseUnless(success)(Error.BadNumericsException("failed to set matrix A"))
+        _ <- Either.raiseUnless(success)(Error.BadNumericsException("solver rejected matrix A"))
         _ <- Either
           .catchNonFatal(solver.solve(b, x))
           .leftMap(t => Error.BadNumericsException(t.getMessage))
       yield
         val coeffs = x.data.toIndexedSeq
+        // println(s"coeff: $coeffs")
         new Estimator:
           def apply(factors: IndexedSeq[Double]): Double =
             (toBasisFunctions(factors) zip coeffs).map(_ * _).sum

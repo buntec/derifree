@@ -65,9 +65,9 @@ yield ()
 val barrierReverseConvertible: Payoff =
   val relBarrier = 0.7
   val callTimes =
-    List(91, 181, 271).map(days => refTime.plus(java.time.Duration.ofDays(90)))
+    List(91, 181, 271).map(days => refTime.plus(java.time.Duration.ofDays(days)))
   val couponTimes =
-    List(90, 180, 270).map(days => refTime.plus(java.time.Duration.ofDays(90))) :+ expiry
+    List(90, 180, 270).map(days => refTime.plus(java.time.Duration.ofDays(days))) :+ expiry
   for
     s1_0 <- spot("AAPL", refTime)
     s2_0 <- spot("MSFT", refTime)
@@ -101,7 +101,7 @@ object Main extends IOApp.Simple:
       .directionNumbersFromResource[IO](5000)
       .flatMap: dirNums =>
         val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
-        val vols = Map("AAPL" -> 0.3.vol, "MSFT" -> 0.33.vol, "GOOG" -> 0.35.vol)
+        val vols = Map("AAPL" -> 0.27.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
         val correlations =
           Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
         val rate = 0.01.rate
@@ -124,6 +124,11 @@ object Main extends IOApp.Simple:
           val price = payoff.fairValue(sim, nSims)
           val t2 = System.nanoTime()
           println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
+
+          val t3 = System.nanoTime()
+          val probs = payoff.callProbabilities(sim, nSims)
+          val t4 = System.nanoTime()
+          println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
 
         for
           // _ <- printPrice(forward)

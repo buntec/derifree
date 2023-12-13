@@ -73,18 +73,22 @@ trait Dsl[T]:
   extension [A](rva: RV[A])
     def mean(
         simulator: Simulator[T],
-        nSims: Int,
-        offset: Int = 0
+        nSims: Int
     )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
-      Compiler[T].mean(self, simulator, nSims, offset, rva)
+      Compiler[T].mean(self, simulator, nSims, rva)
 
   extension (payoff: Payoff)
     def fairValue(
         simulator: Simulator[T],
-        nSims: Int,
-        offset: Int = 0
+        nSims: Int
     )(using TimeLike[T]): Either[derifree.Error, PV] =
-      Compiler[T].fairValue(self, simulator, nSims, offset, payoff)
+      Compiler[T].fairValue(self, simulator, nSims, payoff)
+
+    def callProbabilities(
+        simulator: Simulator[T],
+        nSims: Int
+    )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
+      Compiler[T].callProbabilities(self, simulator, nSims, payoff)
 
 object Dsl:
 

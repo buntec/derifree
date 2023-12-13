@@ -16,6 +16,8 @@ trait Simulator[T]:
       offset: Int
   ): Either[derifree.Error, LazyList[Simulation.Realization[T]]]
 
+  def refTime: T
+
 object Simulator:
 
   enum Error extends derifree.Error:
@@ -24,13 +26,16 @@ object Simulator:
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
       normalGenFactory: NormalGen.Factory,
-      refTime: T,
+      refTime0: T,
       spots: Map[String, Double],
       vols: Map[String, Vol],
       correlations: Map[(String, String), Double],
       rate: Rate
   ): Simulator[T] =
     new Simulator[T]:
+
+      def refTime: T = refTime0
+
       def apply(
           spec: Spec[T],
           nSims: Int,

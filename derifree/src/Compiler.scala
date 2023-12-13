@@ -19,10 +19,9 @@ private[derifree] sealed trait Compiler[T]:
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
-      offset: Int = 0,
       rv: dsl.RV[A]
   ): Either[derifree.Error, A] =
-    simulator(spec(dsl)(rv), nSims, offset).flatMap: sims =>
+    simulator(spec(dsl)(rv), nSims, 0).flatMap: sims =>
       val (sumE, n) = sims.foldMapM(sim => (eval(dsl, sim, rv), Fractional[A].one))
       sumE.map(_ / n)
 
@@ -30,47 +29,60 @@ private[derifree] sealed trait Compiler[T]:
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
-      offset: Int = 0,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, PV] =
     val spec0 = spec(dsl)(rv)
     if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
-      fairValueByLsm(dsl, simulator, nSims, offset, rv)
+      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(0))
     else
-      simulator(spec0, nSims, offset).flatMap: sims =>
+      simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
           sims.foldMapM(sim => (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1))
         sumE.map(_.divideByInt(n))
 
+  def callProbabilities[A](
+      dsl: Dsl[T],
+      simulator: Simulator[T],
+      nSims: Int,
+      rv: dsl.RV[A]
+  )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
+    fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(1))
+
+  // returns pv + call probabilities
   private def fairValueByLsm[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSimsLsm: Int,
       nSims: Int,
       rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, PV] =
+  )(using TimeLike[T]): Either[derifree.Error, (PV, Map[T, Double])] =
     val estimatorsMap = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
-    val facRvs = factorRvs(dsl)(rv)
+    val facRvs = factorRvs(dsl, simulator.refTime, rv)
     val spec0 = spec(dsl)(rv)
     val callDates = spec0.callDates.toList.sorted
-    val estimatorsE = estimatorsMap.map(m => m.toList.sortBy(_(0)).map(_(1)))
+    val estimatorsE = estimatorsMap.map(_.toList.sortBy(_(0)).map(_(1)))
     val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
       sims.foldMapM: sim =>
-        val factors = facRvs.traverse(rv => eval(dsl, sim, rv))
-        val profile = rv.foldMap(toValue(dsl, sim)).written
-        (estimatorsE, factors, profile).mapN((estimators, facs, prof) =>
-          val callAmounts = prof.callAmounts.sortBy(_(0)).map(_(1))
+        val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
+        val profileE = rv.foldMap(toValue(dsl, sim)).written
+        (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
+          val callAmounts = profile.callAmounts.sortBy(_(0)).map(_(1))
           val callDateAndAmount =
-            (callDates zip estimators zip facs zip callAmounts).collectFirstSome {
+            (callDates zip estimators zip factors zip callAmounts).collectFirstSome {
               case (((t, estimator), fac), amount) =>
                 if estimator(fac.toIndexedSeq) > amount.toDouble then Some((t, amount))
                 else None
             }
-          callDateAndAmount.fold(prof.cashflows.map(_(1)).sum)((t, amount) =>
-            amount + prof.cashflows.filter(_(0) < t).map(_(1)).sum
+          callDateAndAmount.fold(profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int])(
+            (t, amount) =>
+              amount + profile.cashflows.filter(_(0) <= t).map(_(1)).sum -> Counter(t -> 1)
           )
         )
-    sumE.map(_.divideByInt(nSims))
+    sumE.map((pv, nCalls) =>
+      pv.divideByInt(nSims) -> (nCalls |+| Counter(callDates.map(_ -> 0)*)).toMap.map((k, n) =>
+        k -> n.toDouble / nSims
+      )
+    )
 
   private def eval[A](
       dsl: Dsl[T],
@@ -87,7 +99,7 @@ private[derifree] sealed trait Compiler[T]:
     rv.foldMap(toValue(dsl, sim)).written
 
   private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
-    rv.foldMap(toSpec(dsl)).run(0)
+    rv.foldMap(toSpec(dsl)).written
 
   private def toLsmEstimator[A](
       dsl: Dsl[T],
@@ -97,12 +109,12 @@ private[derifree] sealed trait Compiler[T]:
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.fromPoly(2)
-    simulator(spec(dsl)(rv), nSims, offset).flatMap: sims0 =>
+    val spec0 = spec(dsl)(rv)
+    simulator(spec0, nSims, offset).flatMap: sims0 =>
       val sims = sims0.toList // force evaluation of LazyList
       val n = sims.length
-      val spec0 = spec(dsl)(rv)
       val callDates = spec0.callDates.toList.sorted
-      val facRvs = factorRvs(dsl)(rv)
+      val facRvs = factorRvs(dsl, simulator.refTime, rv)
       (callDates zip facRvs).reverse
         .foldLeftM((List.fill(n)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
           case ((futCFs, estimators), (callDate, factorRv)) =>
@@ -137,7 +149,7 @@ private[derifree] sealed trait Compiler[T]:
         }
         .map(_(1))
 
-  private def factorRvs[A](dsl: Dsl[T])(rv: dsl.RV[A])(using
+  private def factorRvs[A](dsl: Dsl[T], refTime: T, rv: dsl.RV[A])(using
       TimeLike[T]
   ): List[dsl.RV[List[Double]]] =
     val spec0 = spec(dsl)(rv)
@@ -147,17 +159,18 @@ private[derifree] sealed trait Compiler[T]:
     callDates.map: t =>
       import dsl.*
       for
+        spots0 <- udls.traverse(udl => spot(udl, refTime))
         spots <- udls.traverse(udl => spot(udl, t))
         hitProbs <- barriers.traverse: barrier =>
           barrier match
             case Barrier.Continuous(direction, levels, from, to, policy) =>
               if (from >= t) then pure(0.0)
-              else hitProb(Barrier.Continuous(direction, levels, from, min(t, to)))
+              else hitProb(Barrier.Continuous(direction, levels, from, min(t, to), policy))
             case Barrier.Discrete(direction, levels, policy) =>
               val filteredLevels =
                 levels.map((udl, obs) => udl -> obs.filter((tObs, _) => tObs > t))
               hitProb(Barrier.Discrete(direction, filteredLevels, policy))
-      yield (spots ++ hitProbs)
+      yield (spots zip spots0).map(_ / _) ++ hitProbs
 
   protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
 
@@ -453,7 +466,7 @@ private[derifree] object Compiler:
                       sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
                       Error.Generic(s"missing time index for discount time $time")
                     )
-                    .map(pv => (Profile.callAmount(time, pv), ()))
+                    .map(pv => (Profile.putAmount(time, pv), ()))
                 )
 
               case dsl.Callable(amount, time) =>
@@ -463,5 +476,5 @@ private[derifree] object Compiler:
                       sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
                       Error.Generic(s"missing time index for discount time $time")
                     )
-                    .map(pv => (Profile.putAmount(time, pv), ()))
+                    .map(pv => (Profile.callAmount(time, pv), ()))
                 )

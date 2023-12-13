@@ -40,9 +40,9 @@ object Simulation:
           .map((udl, l) => udl -> l.map(_(1)).combineAll)
         make(
           spotObs,
-          x.discountObs <+> y.discountObs,
-          x.exerciseDates <+> y.exerciseDates,
-          x.callDates <+> y.callDates
+          x.discountObs |+| y.discountObs,
+          x.exerciseDates |+| y.exerciseDates,
+          x.callDates |+| y.callDates
         )
 
   /** Relization of a piecewise diffusion. */
