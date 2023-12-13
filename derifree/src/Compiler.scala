@@ -9,8 +9,6 @@ import cats.~>
 import derifree.syntax.given
 import org.apache.commons.math3.util.{FastMath => math}
 
-import scala.math.Fractional.Implicits.*
-
 import Compiler.*
 
 private[derifree] sealed trait Compiler[T]:
@@ -23,7 +21,7 @@ private[derifree] sealed trait Compiler[T]:
   ): Either[derifree.Error, A] =
     simulator(spec(dsl)(rv), nSims, 0).flatMap: sims =>
       val (sumE, n) = sims.foldMapM(sim => (eval(dsl, sim, rv), Fractional[A].one))
-      sumE.map(_ / n)
+      sumE.map(a => Fractional[A].div(a, n))
 
   def fairValue[A](
       dsl: Dsl[T],
@@ -38,9 +36,9 @@ private[derifree] sealed trait Compiler[T]:
       simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
           sims.foldMapM(sim => (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1))
-        sumE.map(_.divideByInt(n))
+        sumE.map(_ / n)
 
-  def callProbabilities[A](
+  def earlyTerminationProbabilities[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
@@ -87,8 +85,8 @@ private[derifree] sealed trait Compiler[T]:
           )
         )
     sumE.map((pv, nEarlyTerminations) =>
-      pv.divideByInt(nSims) -> (nEarlyTerminations |+| Counter(etDates.map(_ -> 0)*)).toMap.map(
-        (k, n) => k -> n.toDouble / nSims
+      pv / nSims -> (nEarlyTerminations |+| Counter(etDates.map(_ -> 0)*)).toMap.map((k, n) =>
+        k -> n.toDouble / nSims
       )
     )
 
@@ -242,11 +240,11 @@ private[derifree] object Compiler:
       protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
         new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[List[dsl.Barrier], A] = fa match
-            case dsl.HitProb(barrier)   => Writer(List(barrier), 0.5)
-            case dsl.Cashflow(_, _)     => Writer.value(PV(1.0))
-            case dsl.Spot(_, _)         => Writer.value(1.0)
-            case dsl.Callable(_, _)     => Writer.value(())
-            case dsl.Exerciseable(_, _) => Writer.value(())
+            case dsl.HitProb(barrier)  => Writer(List(barrier), 0.5)
+            case dsl.Cashflow(_, _)    => Writer.value(PV(1.0))
+            case dsl.Spot(_, _)        => Writer.value(1.0)
+            case dsl.Callable(_, _)    => Writer.value(())
+            case dsl.Exercisable(_, _) => Writer.value(())
 
       def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
         new (dsl.RVA ~> Writer[Simulation.Spec[T], _]):
@@ -273,7 +271,7 @@ private[derifree] object Compiler:
                 0.5
               )
 
-            case dsl.Exerciseable(_, time) =>
+            case dsl.Exercisable(_, time) =>
               Writer(
                 Simulation.Spec.exerciseDate(time) |+| Simulation.Spec.discountObs(time),
                 ()
@@ -475,7 +473,7 @@ private[derifree] object Compiler:
                     1 - p
                 WriterT.liftF(e)
 
-              case dsl.Exerciseable(amount, time) =>
+              case dsl.Exercisable(amount, time) =>
                 WriterT(
                   Either
                     .fromOption(

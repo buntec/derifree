@@ -1,10 +1,9 @@
 package example1
 
 import cats.syntax.all.*
-
 import derifree.*
-import derifree.syntax.*
 import derifree.literals.*
+import derifree.syntax.*
 
 val dsl = Dsl[java.time.Instant]
 import dsl.*
@@ -13,26 +12,26 @@ val refTime = i"2023-01-01T18:00:00Z"
 val expiry = i"2024-01-01T18:00:00Z"
 val settle = i"2024-01-03T18:00:00Z"
 
-val forward: Payoff =
+val forward: ContingentClaim =
   for
     s0 <- spot("AAPL", refTime)
     s <- spot("AAPL", expiry)
     _ <- cashflow(s / s0, expiry)
   yield ()
 
-val europeanVanillaCall: Payoff = for
+val europeanVanillaCall: ContingentClaim = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(s / s0 - 1, 0), settle)
 yield ()
 
-val europeanVanillaPut: Payoff = for
+val europeanVanillaPut: ContingentClaim = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(1 - s / s0, 0), settle)
 yield ()
 
-val europeanUpAndOutCall: Payoff = for
+val europeanUpAndOutCall: ContingentClaim = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   p <- survivalProb(
@@ -44,7 +43,7 @@ val europeanUpAndOutCall: Payoff = for
   _ <- cashflow(p * max(s / s0 - 1, 0), settle)
 yield ()
 
-val worstOfDownAndInPut: Payoff = for
+val worstOfDownAndInPut: ContingentClaim = for
   s1_0 <- spot("AAPL", refTime)
   s2_0 <- spot("MSFT", refTime)
   s3_0 <- spot("GOOG", refTime)
@@ -62,7 +61,7 @@ val worstOfDownAndInPut: Payoff = for
   _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
-val barrierReverseConvertible: Payoff =
+val barrierReverseConvertible: ContingentClaim =
   val relBarrier = 0.7
   val callTimes =
     List(91, 181, 271).map(days => refTime.plus(java.time.Duration.ofDays(days)))
@@ -119,14 +118,14 @@ object Main extends IOApp.Simple:
 
         val nSims = (1 << 15) - 1
 
-        def printPrice(payoff: Payoff) = IO:
+        def printPrice(cc: ContingentClaim) = IO:
           val t1 = System.nanoTime()
-          val price = payoff.fairValue(sim, nSims)
+          val price = cc.fairValue(sim, nSims)
           val t2 = System.nanoTime()
           println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 
           val t3 = System.nanoTime()
-          val probs = payoff.callProbabilities(sim, nSims)
+          val probs = cc.earlyTerminationProbabilities(sim, nSims)
           val t4 = System.nanoTime()
           println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
 

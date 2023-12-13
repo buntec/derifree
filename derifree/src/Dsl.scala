@@ -34,13 +34,13 @@ trait Dsl[T]:
   case class Spot(ticker: String, time: T) extends RVA[Double]
   case class Cashflow(amount: Double, time: T) extends RVA[PV]
   case class HitProb(barrier: Barrier) extends RVA[Double]
-  case class Exerciseable(amount: Double, time: T) extends RVA[Unit]
+  case class Exercisable(amount: Double, time: T) extends RVA[Unit]
   case class Callable(amount: Double, time: T) extends RVA[Unit]
 
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
 
-  type Payoff = RV[Unit]
+  type ContingentClaim = RV[Unit]
 
   def pure[A](a: A): RV[A] = Monad[RV].pure(a)
 
@@ -56,12 +56,12 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
-  def exerciseable(amount: Double, time: T): RV[Unit] =
-    liftF[RVA, Unit](Exerciseable(amount, time))
+  def exercisable(amount: Double, time: T): RV[Unit] =
+    liftF[RVA, Unit](Exercisable(amount, time))
 
-  /** Alias for `exerciseable`. */
+  /** Alias for `exercisable`. */
   def puttable(amount: Double, time: T): RV[Unit] =
-    liftF[RVA, Unit](Exerciseable(amount, time))
+    liftF[RVA, Unit](Exercisable(amount, time))
 
   def callable(amount: Double, time: T): RV[Unit] =
     liftF[RVA, Unit](Callable(amount, time))
@@ -77,18 +77,18 @@ trait Dsl[T]:
     )(using TimeLike[T], Fractional[A], Monoid[A]): Either[derifree.Error, A] =
       Compiler[T].mean(self, simulator, nSims, rva)
 
-  extension (payoff: Payoff)
+  extension (cc: ContingentClaim)
     def fairValue(
         simulator: Simulator[T],
         nSims: Int
     )(using TimeLike[T]): Either[derifree.Error, PV] =
-      Compiler[T].fairValue(self, simulator, nSims, payoff)
+      Compiler[T].fairValue(self, simulator, nSims, cc)
 
-    def callProbabilities(
+    def earlyTerminationProbabilities(
         simulator: Simulator[T],
         nSims: Int
     )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
-      Compiler[T].callProbabilities(self, simulator, nSims, payoff)
+      Compiler[T].earlyTerminationProbabilities(self, simulator, nSims, cc)
 
 object Dsl:
 
