@@ -1,12 +1,14 @@
 package derifree
 
-opaque type TimeGrid = IndexedSeq[Tick]
+import cats.syntax.all.*
 
-import TimeGrid.*
-import scala.collection.immutable.ArraySeq
 import scala.collection.Searching.Found
 import scala.collection.Searching.InsertionPoint
-import cats.syntax.all.*
+import scala.collection.immutable.ArraySeq
+
+import TimeGrid.*
+
+opaque type TimeGrid = IndexedSeq[Tick]
 
 extension (tg: TimeGrid)
 
@@ -34,7 +36,9 @@ object TimeGrid:
   object Factory:
     def almostEquidistant(dt: YearFraction): Factory = new Factory:
       def apply(includes: Set[YearFraction]): TimeGrid =
-        self.almostEquidistant(dt, includes)
+        val tg = self.almostEquidistant(dt, includes)
+        // println(s"timegrid: $tg")
+        tg
 
   val tickSize: YearFraction = YearFraction.oneSecond
 

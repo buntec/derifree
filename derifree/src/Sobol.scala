@@ -55,10 +55,10 @@ trait Sobol:
 
 object Sobol:
 
-  enum Error extends derifree.Error:
-    case MaxDimensionsExceeded
-    case FailedToParseDirectionNumbers(override val getMessage: String)
-    case Wrapper(t: Throwable)
+  enum Error(override val getMessage: String) extends derifree.Error:
+    case MaxDimensionsExceeded extends Error("max dimensions exceeded")
+    case FailedToParseDirectionNumbers(line: String) extends Error(s"failed to parse: $line")
+    case Wrapper(t: Throwable) extends Error(t.getMessage)
 
   opaque type DirectionNumbers = IndexedSeq[IndexedSeq[Int]]
 

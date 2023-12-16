@@ -1,0 +1,68 @@
+package derifree
+
+import derifree.literals.*
+import derifree.syntax.*
+
+class VanillaSuite extends munit.FunSuite:
+
+  val dsl = Dsl[java.time.Instant]
+  import dsl.*
+
+  val refTime = i"2023-01-01T18:00:00Z"
+
+  val spots = Map("ACME" -> 100.0, "EMCA" -> 50.0)
+  val vols = Map("ACME" -> 0.3.vol, "EMCA" -> 0.35.vol)
+  val correlations = Map(("ACME", "EMCA") -> 0.7)
+  val rate = 0.05.rate
+
+  val dirNums = Sobol.directionNumbers(500).toTry.get
+
+  val sim: Simulator[java.time.Instant] =
+    Simulator.blackScholes(
+      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+      NormalGen.Factory.sobol(dirNums),
+      refTime,
+      spots,
+      vols,
+      correlations,
+      rate
+    )
+
+  test("Black-Scholes Monte Carlo price is close to closed-form price."):
+    val nSims = (1 << 16) - 1
+    for
+      days <- List(10, 30, 90, 180, 365)
+      strike <- List(0.5, 0.75, 1.0, 1.25, 1.5)
+      isCall <- List(true, false)
+      udl <- List("ACME", "EMCA")
+    yield
+      val hint = s"days=$days, strike=$strike, isCall=$isCall, udl=$udl"
+      val expiry = refTime.plusDays(days)
+      val settle = expiry.plusDays(2)
+      val omega = if isCall then 1 else -1
+
+      val europeanVanilla = for
+        s0 <- spot(udl, refTime)
+        s <- spot(udl, expiry)
+        _ <- cashflow(max(omega * (s / s0 - strike), 0), settle)
+      yield ()
+
+      val t = refTime.yearFractionTo(expiry)
+      val forward = spots(udl) * math.exp(rate * t)
+      val ts = refTime.yearFractionTo(settle)
+      val discount = math.exp(-rate * ts)
+      val optionType = if isCall then black.OptionType.Call else black.OptionType.Put
+
+      val refPrice = black.price(
+        optionType,
+        spots(udl) * strike,
+        t.toDouble,
+        vols(udl).toDouble,
+        forward,
+        discount
+      ) / spots(udl)
+
+      val price = europeanVanilla.fairValue(sim, nSims).toTry.get
+
+      println(s"price=$price, ref=$refPrice, hint=$hint")
+      assertEqualsDouble(price.toDouble, refPrice, 1e-4)
