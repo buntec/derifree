@@ -8,7 +8,7 @@ implement a contract definition language for equity derivatives.
 ## Examples
 
 
-```scala
+```
 import cats.syntax.all.*
 import derifree.*
 import derifree.literals.*

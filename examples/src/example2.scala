@@ -28,37 +28,30 @@ val worstOfDip = for
   _ <- cashflow(pHit * max(0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
 yield ()
 
-import cats.effect.*
+@main def run: Unit =
+  val dirNums = Sobol.directionNumbers(5000).toTry.get
 
-object Main extends IOApp.Simple:
+  val spots = Map("AAPL" -> 195.0, "META" -> 330.0)
+  val vols = Map("AAPL" -> 0.25.vol, "META" -> 0.3.vol)
+  val correlations = Map(("AAPL", "META") -> 0.7)
+  val rate = 0.04.rate
 
-  def run: IO[Unit] = Sobol
-    .directionNumbersFromResource[IO](5000)
-    .flatMap: dirNums =>
+  val sim: Simulator[YearFraction] =
+    Simulator.blackScholes[YearFraction](
+      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+      NormalGen.Factory.sobol(dirNums),
+      refTime,
+      spots,
+      vols,
+      correlations,
+      rate
+    )
 
-      val spots = Map("AAPL" -> 195.0, "META" -> 330.0)
-      val vols = Map("AAPL" -> 0.25.vol, "META" -> 0.3.vol)
-      val correlations = Map(("AAPL", "META") -> 0.7)
-      val rate = 0.04.rate
+  val nSims = (1 << 16) - 1
 
-      val sim: Simulator[YearFraction] =
-        Simulator.blackScholes[YearFraction](
-          TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-          NormalGen.Factory.sobol(dirNums),
-          refTime,
-          spots,
-          vols,
-          correlations,
-          rate
-        )
-
-      val nSims = (1 << 16) - 1
-
-      val priceAndPrint = IO.delay:
-        val t1 = System.nanoTime()
-        // val price = worstOfDip.mean(sim, nSims)
-        val price = worstOfDip.fairValue(sim, nSims)
-        val t2 = System.nanoTime()
-        println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
-
-      priceAndPrint.replicateA_(100)
+  (0 until 1000).foreach: _ =>
+    val t1 = System.nanoTime()
+    // val price = worstOfDip.mean(sim, nSims)
+    val price = worstOfDip.fairValue(sim, nSims)
+    val t2 = System.nanoTime()
+    println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")

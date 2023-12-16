@@ -6,12 +6,10 @@ import org.apache.commons.math3.analysis.UnivariateFunction
 import org.apache.commons.math3.analysis.solvers.BrentSolver
 import org.apache.commons.math3.util.{FastMath => math}
 
-import scala.util.control.NoStackTrace
-
 enum OptionType:
   case Call, Put
 
-enum Error extends NoStackTrace:
+enum Error extends derifree.Error:
   case PriceExceedsUpperBound
   case PriceBelowIntrinsic
   case SolverFailed(info: String)

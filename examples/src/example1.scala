@@ -1,5 +1,6 @@
 package example1
 
+import cats.*
 import cats.syntax.all.*
 import derifree.*
 import derifree.literals.*
@@ -93,49 +94,42 @@ val barrierReverseConvertible =
     _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
-import cats.effect.*
-import cats.*
+@main def run: Unit =
+  val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
+  val vols = Map("AAPL" -> 0.37.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
+  val correlations =
+    Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
+  val rate = 0.05.rate
 
-object Main extends IOApp.Simple:
-  def run: IO[Unit] =
-    Sobol
-      .directionNumbersFromResource[IO](5000)
-      .flatMap: dirNums =>
-        val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
-        val vols = Map("AAPL" -> 0.37.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
-        val correlations =
-          Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
-        val rate = 0.05.rate
+  val dirNums = Sobol.directionNumbers(5000).toTry.get
 
-        val sim: Simulator[java.time.Instant] =
-          Simulator.blackScholes(
-            TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-            NormalGen.Factory.sobol(dirNums),
-            refTime,
-            spots,
-            vols,
-            correlations,
-            rate
-          )
+  val sim: Simulator[java.time.Instant] =
+    Simulator.blackScholes(
+      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+      NormalGen.Factory.sobol(dirNums),
+      refTime,
+      spots,
+      vols,
+      correlations,
+      rate
+    )
 
-        val nSims = (1 << 15) - 1
+  val nSims = (1 << 15) - 1
 
-        def printPrice(cc: ContingentClaim) = IO:
-          val t1 = System.nanoTime()
-          val price = cc.fairValue(sim, nSims)
-          val t2 = System.nanoTime()
-          println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
+  def printPrice(cc: ContingentClaim) =
+    val t1 = System.nanoTime()
+    val price = cc.fairValue(sim, nSims)
+    val t2 = System.nanoTime()
+    println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 
-          val t3 = System.nanoTime()
-          val probs = cc.earlyTerminationProbabilities(sim, nSims)
-          val t4 = System.nanoTime()
-          println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
+    val t3 = System.nanoTime()
+    val probs = cc.earlyTerminationProbabilities(sim, nSims)
+    val t4 = System.nanoTime()
+    println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
 
-        (
-          printPrice(europeanCall),
-          printPrice(europeanPut),
-          printPrice(bermudanPut),
-          printPrice(europeanUpAndOutCall),
-          printPrice(worstOfDownAndInPut),
-          printPrice(barrierReverseConvertible)
-        ).tupled.void.replicateA_(10)
+  printPrice(europeanCall)
+  printPrice(europeanPut)
+  printPrice(bermudanPut)
+  printPrice(europeanUpAndOutCall)
+  printPrice(worstOfDownAndInPut)
+  printPrice(barrierReverseConvertible)

@@ -34,17 +34,13 @@
 
 package derifree
 
-import cats.MonadThrow
 import cats.data.{State => cState}
-import cats.effect.*
 import cats.syntax.all.*
-import fs2.Stream
-import fs2.io.file.Files
-import fs2.io.file.Path
 
 import scala.collection.immutable.ArraySeq
 
 import Sobol.*
+import java.io.FileNotFoundException
 
 /*
  * https://web.maths.unsw.edu.au/~fkuo/sobol/
@@ -61,6 +57,8 @@ object Sobol:
 
   enum Error extends derifree.Error:
     case MaxDimensionsExceeded
+    case FailedToParseDirectionNumbers(override val getMessage: String)
+    case Wrapper(t: Throwable)
 
   opaque type DirectionNumbers = IndexedSeq[IndexedSeq[Int]]
 
@@ -74,17 +72,8 @@ object Sobol:
 
   case class State(pos: Int, x: IndexedSeq[Int])
 
-  def directionNumbersFromResource[F[_]: Concurrent: Sync](maxDim: Int): F[DirectionNumbers] =
-    directionNumbersFromByteStream[F](
-      fs2.io.readClassLoaderResource[F]("new-joe-kuo-6.21201"),
-      maxDim
-    )
-
-  def directionNumbersFromFile[F[_]: Concurrent: Files](
-      path: Path,
-      maxDim: Int
-  ): F[DirectionNumbers] =
-    directionNumbersFromByteStream[F](Files[F].readAll(path), maxDim)
+  def directionNumbers(maxDim: Int): Either[Error, DirectionNumbers] =
+    directionNumbersFromResource(maxDim, "new-joe-kuo-6.21201")
 
   def apply(dim: Int, directionNumbers: DirectionNumbers): Either[Error, Sobol] =
     Either
@@ -163,34 +152,33 @@ object Sobol:
   private val MAXPOS: Int = ((1L << BITS) - 1).toInt
   private val SCALE: Double = (1L << BITS).toDouble
 
-  private def directionNumbersFromByteStream[F[_]: Concurrent](
-      bytes: Stream[F, Byte],
-      maxDim: Int
-  ): F[DirectionNumbers] =
-
-    def parseLine(line: String): Option[IndexedSeq[Int]] =
-      val tokens = line.split(" ").toList.filter(_.nonEmpty).traverse(_.toIntOption)
-      tokens.flatMap:
-        case _ :: s :: a :: m_i =>
-          val dirs = Array.ofDim[Int](BITS + 2)
-          val m = (0 :: m_i).toArray
-          var i = 1
-          while (i <= s) {
-            dirs(i) = m(i) << (BITS - i)
-            i += 1
+  private def parseLine(line: String): Option[IndexedSeq[Int]] =
+    val tokens = line.split(" ").toList.filter(_.nonEmpty).traverse(_.toIntOption)
+    tokens.flatMap:
+      case _ :: s :: a :: m_i =>
+        val dirs = Array.ofDim[Int](BITS + 2)
+        val m = (0 :: m_i).toArray
+        var i = 1
+        while (i <= s) {
+          dirs(i) = m(i) << (BITS - i)
+          i += 1
+        }
+        while (i <= BITS) {
+          dirs(i) = dirs(i - s) ^ (dirs(i - s) >> s)
+          var k = 1
+          while (k < s) {
+            dirs(i) ^= ((a >> (s - 1 - k)) & 1) * dirs(i - k)
+            k += 1
           }
-          while (i <= BITS) {
-            dirs(i) = dirs(i - s) ^ (dirs(i - s) >> s)
-            var k = 1
-            while (k < s) {
-              dirs(i) ^= ((a >> (s - 1 - k)) & 1) * dirs(i - k)
-              k += 1
-            }
-            i += 1
-          }
-          dirs.toIndexedSeq.some
-        case _ => None
+          i += 1
+        }
+        dirs.toIndexedSeq.some
+      case _ => None
 
+  private def directionNumbersFromResource(
+      maxDim: Int,
+      resource: String
+  ): Either[Error, DirectionNumbers] =
     val d0 =
       val dirs = Array.ofDim[Int](BITS + 2)
       var i = 1
@@ -200,20 +188,21 @@ object Sobol:
       }
       dirs.toIndexedSeq
 
-    val lines =
-      bytes
-        .through(fs2.text.utf8.decode)
-        .through(fs2.text.lines)
-        .drop(1) // drop header
-        .take(maxDim)
-
-    (fs2.Stream(d0).covary[F] ++ lines.evalMap: line =>
-      MonadThrow[F].fromOption(
-        parseLine(line),
-        new Exception(s"failed to parse line: $line")
-      )).compile.toList
-      .map(_.toArray.toIndexedSeq)
-      .map(DirectionNumbers(_))
-      .ensure(
-        new IllegalArgumentException("found fewer than the requested number of dimensions")
-      )(_.length >= maxDim)
+    Either
+      .catchOnly[FileNotFoundException](scala.io.Source.fromResource(resource))
+      .leftMap(t => Error.Wrapper(t))
+      .flatMap(
+        _.getLines
+          .drop(1) // drop header
+          .take(maxDim)
+          .map(line =>
+            Either.fromOption(
+              parseLine(line),
+              Error.FailedToParseDirectionNumbers(s"line: $line")
+            )
+          )
+          .toList
+          .sequence
+      )
+      .map(l => DirectionNumbers((d0 :: l).toArray.toIndexedSeq))
+      .ensure(Error.MaxDimensionsExceeded)(_.length >= maxDim)
