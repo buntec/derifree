@@ -1,5 +1,6 @@
 package derifree
 
+import alleycats.std.iterable.*
 import cats.Monoid
 import cats.data.Writer
 import cats.data.WriterT
@@ -20,7 +21,9 @@ private[derifree] sealed trait Compiler[T]:
       rv: dsl.RV[A]
   ): Either[derifree.Error, A] =
     simulator(spec(dsl)(rv), nSims, 0).flatMap: sims =>
-      val (sumE, n) = sims.foldMapM(sim => (eval(dsl, sim, rv), Fractional[A].one))
+      val (sumE, n) = (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+        (eval(dsl, sim, rv), Fractional[A].one)
+      )
       sumE.map(a => Fractional[A].div(a, n))
 
   def fairValue[A](
@@ -30,12 +33,15 @@ private[derifree] sealed trait Compiler[T]:
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, PV] =
     val spec0 = spec(dsl)(rv)
+    // println(s"spec: $spec0")
     if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
       fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(0))
     else
       simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
-          sims.foldMapM(sim => (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1))
+          (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+            (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1)
+          )
         sumE.map(_ / n)
 
   def earlyTerminationProbabilities[A](
@@ -63,8 +69,9 @@ private[derifree] sealed trait Compiler[T]:
         Either.fromOption(m.get(d), Error.Generic(s"missing estimator for $d"))
       )
     )
-    val sumE = simulator(spec(dsl)(rv), nSims, nSimsLsm).flatMap: sims =>
-      sims.foldMapM: sim =>
+    val combinedRV = facRvs.sequence *> rv
+    val sumE = simulator(spec(dsl)(combinedRV), nSims, nSimsLsm).flatMap: sims =>
+      (sims: Iterable[Simulation.Realization[T]]).foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = rv.foldMap(toValue(dsl, sim)).written
         (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
@@ -121,13 +128,13 @@ private[derifree] sealed trait Compiler[T]:
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.fromPoly(2)
     val spec0 = spec(dsl)(rv)
-    simulator(spec0, nSims, offset).flatMap: sims0 =>
-      val sims = sims0.toList // force evaluation of LazyList
-      val n = sims.length
-      val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
-      val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
+    val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
+    val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
+    val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
+    simulator(combinedSpec, nSims, offset).flatMap: sims0 =>
+      val sims = sims0.toList
       (etDates zip facRvs).reverse
-        .foldLeftM((List.fill(n)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
+        .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
           case ((futCFs, estimators), (etDate, factorRv)) =>
             val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
               for

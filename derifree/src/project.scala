@@ -1,6 +1,7 @@
 //> using scala 3.3.1
 //> using dep "org.typelevel::cats-core::2.10.0"
 //> using dep "org.typelevel::cats-free::2.10.0"
+//> using dep "org.typelevel::alleycats-core::2.10.0"
 //> using dep "org.typelevel::literally::1.1.0"
 //> using dep "org.apache.commons:commons-math3:3.6.1"
 //> using dep "org.ejml:ejml-all:0.43.1"

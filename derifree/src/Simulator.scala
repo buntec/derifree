@@ -7,6 +7,7 @@ import derifree.Simulation.Spec
 import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.collection.immutable.ArraySeq
+import scala.collection.View
 
 trait Simulator[T]:
 
@@ -14,7 +15,7 @@ trait Simulator[T]:
       spec: Simulation.Spec[T],
       nSims: Int,
       offset: Int
-  ): Either[derifree.Error, LazyList[Simulation.Realization[T]]]
+  ): Either[derifree.Error, View[Simulation.Realization[T]]]
 
   def refTime: T
 
@@ -40,7 +41,7 @@ object Simulator:
           spec: Spec[T],
           nSims: Int,
           offset: Int
-      ): Either[derifree.Error, LazyList[Realization[T]]] =
+      ): Either[derifree.Error, View[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
         val nUdl = udls.length
         val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
@@ -95,7 +96,7 @@ object Simulator:
 
           val z = Array.ofDim[Double](nUdl)
 
-          LazyList.unfold((0, normalGen.init(offset))): (count, normalState) =>
+          View.unfold((0, normalGen.init(offset))): (count, normalState) =>
             if count < nSims then
               val (nextNormalState, z0) = normalGen.next.run(normalState).value
 

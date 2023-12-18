@@ -114,7 +114,7 @@ val barrierReverseConvertible =
       rate
     )
 
-  val nSims = (1 << 15) - 1
+  val nSims = (1 << 16) - 1
 
   def printPrice(cc: ContingentClaim) =
     val t1 = System.nanoTime()
