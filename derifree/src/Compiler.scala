@@ -54,7 +54,7 @@ private[derifree] sealed trait Compiler[T]:
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
     fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(1))
 
-  // returns pv + call probabilities
+  // returns pv + call/put probabilities
   private def fairValueByLsm[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
@@ -66,36 +66,34 @@ private[derifree] sealed trait Compiler[T]:
     val spec0 = spec(dsl)(rv)
     val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
     val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
-    val estimatorsE = estimatorsMapE.flatMap(m =>
-      etDates.traverse(d =>
-        Either.fromOption(m.get(d), Error.Generic(s"missing estimator for $d"))
-      )
-    )
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
     // println(s"combined spec: $combinedSpec")
     val sumE = simulator(combinedSpec, nSims, nSimsLsm).flatMap: sims =>
       (sims: Iterable[Simulation.Realization[T]]).foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = profile(dsl, sim, rv)
-        (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
+        (estimatorsMapE, factorsE, profileE).mapN((estimators, factors, profile) =>
           val earlyTerminationDateAndAmount =
-            (etDates zip estimators zip factors).collectFirstSome:
-              case ((t, estimator), fac) =>
-                val callAmountMaybe = profile.callAmounts.find(_(0) == t).map(_(1))
-                val putAmountMaybe = profile.putAmounts.find(_(0) == t).map(_(1))
-                val estContValue = estimator(fac.toIndexedSeq)
-                (callAmountMaybe, putAmountMaybe) match
-                  case (Some(c), None) if c.toDouble < estContValue =>
-                    // println(s"calling: t=$t, pv=$c, cont value=$estContValue, factors=$fac")
-                    Some((t, c))
-                  case (None, Some(p)) if p.toDouble > estContValue =>
-                    // println(s"putting: t=$t, pv=$p, cont value=$estContValue, factors=$fac")
-                    Some((t, p))
-                  case (Some(c), Some(p)) =>
-                    if c.toDouble < estContValue then Some((t, c))
-                    else if p.toDouble > estContValue then Some((t, p))
-                    else None
-                  case _ => None
+            (etDates zip factors).collectFirstSome:
+              case (t, fac) =>
+                estimators
+                  .get(t)
+                  .flatMap: estimator =>
+                    val callAmountMaybe = profile.callAmounts.find(_(0) == t).map(_(1))
+                    val putAmountMaybe = profile.putAmounts.find(_(0) == t).map(_(1))
+                    val estContValue = estimator(fac.toIndexedSeq)
+                    (callAmountMaybe, putAmountMaybe) match
+                      case (Some(c), None) if c.toDouble < estContValue =>
+                        // println(s"calling: t=$t, pv=$c, cont value=$estContValue, factors=$fac")
+                        Some((t, c))
+                      case (None, Some(p)) if p.toDouble > estContValue =>
+                        // println(s"putting: t=$t, pv=$p, cont value=$estContValue, factors=$fac")
+                        Some((t, p))
+                      case (Some(c), Some(p)) =>
+                        if c.toDouble < estContValue then Some((t, c))
+                        else if p.toDouble > estContValue then Some((t, p))
+                        else None
+                      case _ => None
 
           earlyTerminationDateAndAmount.fold(
             profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int]
@@ -159,34 +157,35 @@ private[derifree] sealed trait Compiler[T]:
                 val putAmountMaybe = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
                 (factors, contValue, callAmountMaybe, putAmountMaybe)
             val estimatorE = rowsE.flatMap(rows =>
-              println(s"et: $etDate")
-              lsm0.toContValueEstimator(
-                rows
-                  .filter((_, _, callAmountMaybe, putAmountMaybe) =>
-                    callAmountMaybe.isDefined || putAmountMaybe.isDefined
-                  )
-                  .map((factors, contValue, _, _) => (factors, contValue.toDouble))
-              )
-            )
-            val nextFutCfs = estimatorE.flatMap(estimator =>
-              rowsE.map(rows =>
-                rows.map((factors, futCf, callAmount, putAmount) =>
-                  val estContValue = estimator(factors.toIndexedSeq)
-                  // println(s"et: $etDate, factors: $factors, est cont value: $estContValue")
-                  (callAmount, putAmount) match
-                    case (Some(c), None) if c.toDouble < estContValue => c
-                    case (None, Some(p)) if p.toDouble > estContValue => p
-                    case (Some(c), Some(p))                           =>
-                      // caller takes precedence
-                      if c.toDouble < estContValue then c
-                      else if p.toDouble > estContValue then p
-                      else futCf
-                    case _ => futCf
+              val filteredRows = rows
+                .filter((_, _, callAmountMaybe, putAmountMaybe) =>
+                  callAmountMaybe.isDefined || putAmountMaybe.isDefined
                 )
-              )
+                .map((factors, contValue, _, _) => (factors, contValue.toDouble))
+              if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
+              then lsm0.toContValueEstimator(filteredRows).map(_.some)
+              else Right(None) // too few relevant paths for least-squares
             )
-            (nextFutCfs, estimatorE).mapN((futCfs, estimator) =>
-              (futCfs, estimators + (etDate -> estimator))
+            val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>
+              estimatorMaybe match
+                case None => rows.map((_, futCf, _, _) => futCf)
+                case Some(estimator) =>
+                  rows.map((factors, futCf, callAmount, putAmount) =>
+                    val estContValue = estimator(factors.toIndexedSeq)
+                    // println(s"et: $etDate, factors: $factors, est cont value: $estContValue")
+                    (callAmount, putAmount) match
+                      case (Some(c), None) if c.toDouble < estContValue => c
+                      case (None, Some(p)) if p.toDouble > estContValue => p
+                      case (Some(c), Some(p))                           =>
+                        // caller takes precedence
+                        if c.toDouble < estContValue then c
+                        else if p.toDouble > estContValue then p
+                        else futCf
+                      case _ => futCf
+                  )
+            )
+            (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
+              (futCfs, estimatorMaybe.fold(estimators)(est => estimators + (etDate -> est)))
             )
         }
         .map(_(1))
