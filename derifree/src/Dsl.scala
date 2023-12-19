@@ -34,8 +34,8 @@ trait Dsl[T]:
   case class Spot(ticker: String, time: T) extends RVA[Double]
   case class Cashflow(amount: Double, time: T) extends RVA[PV]
   case class HitProb(barrier: Barrier) extends RVA[Double]
-  case class Exercisable(amount: Double, time: T) extends RVA[Unit]
-  case class Callable(amount: Double, time: T) extends RVA[Unit]
+  case class Puttable(amount: Option[Double], time: T) extends RVA[Unit]
+  case class Callable(amount: Option[Double], time: T) extends RVA[Unit]
 
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
@@ -56,14 +56,14 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
-  def exercisable(amount: Double, time: T): RV[Unit] =
-    liftF[RVA, Unit](Exercisable(amount, time))
+  def exercisable(amount: Option[Double], time: T): RV[Unit] =
+    liftF[RVA, Unit](Puttable(amount, time))
 
   /** Alias for `exercisable`. */
-  def puttable(amount: Double, time: T): RV[Unit] =
-    liftF[RVA, Unit](Exercisable(amount, time))
+  def puttable(amount: Option[Double], time: T): RV[Unit] =
+    liftF[RVA, Unit](Puttable(amount, time))
 
-  def callable(amount: Double, time: T): RV[Unit] =
+  def callable(amount: Option[Double], time: T): RV[Unit] =
     liftF[RVA, Unit](Callable(amount, time))
 
   def min[A: Ordering](as: A*): A = as.min

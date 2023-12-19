@@ -118,8 +118,9 @@ object Simulator:
                 while (i < nUdl) {
                   val v = vols(i)(j)
                   vols(i)(j + 1) = v
+                  // println(s"z=${z(i)}, v=$v, sdt=${sdts(j)}")
                   logspots(i)(j + 1) =
-                    logspots(i)(j) + (r - 0.5 * v * v) * dts(i).toDouble + v * sdts(i) * z(i)
+                    logspots(i)(j) + (r - 0.5 * v * v) * dts(j).toDouble + v * sdts(j) * z(i)
                   i += 1
                 }
                 j += 1

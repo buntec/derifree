@@ -37,7 +37,7 @@ object TimeGrid:
     def almostEquidistant(dt: YearFraction): Factory = new Factory:
       def apply(includes: Set[YearFraction]): TimeGrid =
         val tg = self.almostEquidistant(dt, includes)
-        // println(s"timegrid: $tg")
+        // println(s"timegrid - min dt: ${tg.deltas.min}, max dt: ${tg.deltas.max}, sum of dts: ${tg.deltas.map(_.toDouble).sum}")
         tg
 
   val tickSize: YearFraction = YearFraction.oneSecond

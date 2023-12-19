@@ -35,7 +35,9 @@ private[derifree] sealed trait Compiler[T]:
     val spec0 = spec(dsl)(rv)
     // println(s"spec: $spec0")
     if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
-      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(0))
+      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map: (pv, probs) =>
+        println(s"early term prob: ${probs.values.sum}")
+        pv
     else
       simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
@@ -69,11 +71,12 @@ private[derifree] sealed trait Compiler[T]:
         Either.fromOption(m.get(d), Error.Generic(s"missing estimator for $d"))
       )
     )
-    val combinedRV = facRvs.sequence *> rv
-    val sumE = simulator(spec(dsl)(combinedRV), nSims, nSimsLsm).flatMap: sims =>
+    val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
+    // println(s"combined spec: $combinedSpec")
+    val sumE = simulator(combinedSpec, nSims, nSimsLsm).flatMap: sims =>
       (sims: Iterable[Simulation.Realization[T]]).foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
-        val profileE = rv.foldMap(toValue(dsl, sim)).written
+        val profileE = profile(dsl, sim, rv)
         (estimatorsE, factorsE, profileE).mapN((estimators, factors, profile) =>
           val earlyTerminationDateAndAmount =
             (etDates zip estimators zip factors).collectFirstSome:
@@ -82,8 +85,12 @@ private[derifree] sealed trait Compiler[T]:
                 val putAmountMaybe = profile.putAmounts.find(_(0) == t).map(_(1))
                 val estContValue = estimator(fac.toIndexedSeq)
                 (callAmountMaybe, putAmountMaybe) match
-                  case (Some(c), None) if c.toDouble < estContValue => Some((t, c))
-                  case (None, Some(p)) if p.toDouble > estContValue => Some((t, p))
+                  case (Some(c), None) if c.toDouble < estContValue =>
+                    // println(s"calling: t=$t, pv=$c, cont value=$estContValue, factors=$fac")
+                    Some((t, c))
+                  case (None, Some(p)) if p.toDouble > estContValue =>
+                    // println(s"putting: t=$t, pv=$p, cont value=$estContValue, factors=$fac")
+                    Some((t, p))
                   case (Some(c), Some(p)) =>
                     if c.toDouble < estContValue then Some((t, c))
                     else if p.toDouble > estContValue then Some((t, p))
@@ -93,7 +100,9 @@ private[derifree] sealed trait Compiler[T]:
           earlyTerminationDateAndAmount.fold(
             profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int]
           )((t, amount) =>
-            amount + profile.cashflows.filter(_(0) <= t).map(_(1)).sum -> Counter(t -> 1)
+            val cashflowsUntil = profile.cashflows.filter(_(0) <= t).map(_(1)).sum
+            // println(s"et: t=$t, pv=$amount, cfs until=$cashflowsUntil")
+            amount + cashflowsUntil -> Counter(t -> 1)
           )
         )
     sumE.map((pv, nEarlyTerminations) =>
@@ -126,7 +135,7 @@ private[derifree] sealed trait Compiler[T]:
       offset: Int = 0,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
-    val lsm0 = Lsm.fromPoly(2)
+    val lsm0 = Lsm.fromPoly(3)
     val spec0 = spec(dsl)(rv)
     val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
     val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
@@ -146,18 +155,24 @@ private[derifree] sealed trait Compiler[T]:
                   .filter((t, _) => t > etDate && nextEtDateMaybe.forall(t < _))
                   .map(_(1))
                   .sum + futCf
-                val callAmount = profile.callAmounts.find((t, _) => t == etDate).map(_(1))
-                val putAmount = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
-                (factors, contValue, callAmount, putAmount)
+                val callAmountMaybe = profile.callAmounts.find((t, _) => t == etDate).map(_(1))
+                val putAmountMaybe = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
+                (factors, contValue, callAmountMaybe, putAmountMaybe)
             val estimatorE = rowsE.flatMap(rows =>
+              println(s"et: $etDate")
               lsm0.toContValueEstimator(
-                rows.map((factors, contValues, _, _) => (factors, contValues.toDouble))
+                rows
+                  .filter((_, _, callAmountMaybe, putAmountMaybe) =>
+                    callAmountMaybe.isDefined || putAmountMaybe.isDefined
+                  )
+                  .map((factors, contValue, _, _) => (factors, contValue.toDouble))
               )
             )
             val nextFutCfs = estimatorE.flatMap(estimator =>
               rowsE.map(rows =>
                 rows.map((factors, futCf, callAmount, putAmount) =>
                   val estContValue = estimator(factors.toIndexedSeq)
+                  // println(s"et: $etDate, factors: $factors, est cont value: $estContValue")
                   (callAmount, putAmount) match
                     case (Some(c), None) if c.toDouble < estContValue => c
                     case (None, Some(p)) if p.toDouble > estContValue => p
@@ -196,7 +211,7 @@ private[derifree] sealed trait Compiler[T]:
               val filteredLevels =
                 levels.map((udl, obs) => udl -> obs.filter((tObs, _) => tObs > t))
               hitProb(Barrier.Discrete(direction, filteredLevels, policy))
-      yield (spots zip spots0).map(_ / _) ++ hitProbs
+      yield (spots zip spots0).map(_ / _ - 1) ++ hitProbs
 
   protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
 
@@ -252,11 +267,11 @@ private[derifree] object Compiler:
       protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
         new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[List[dsl.Barrier], A] = fa match
-            case dsl.HitProb(barrier)  => Writer(List(barrier), 0.5)
-            case dsl.Cashflow(_, _)    => Writer.value(PV(1.0))
-            case dsl.Spot(_, _)        => Writer.value(1.0)
-            case dsl.Callable(_, _)    => Writer.value(())
-            case dsl.Exercisable(_, _) => Writer.value(())
+            case dsl.HitProb(barrier) => Writer(List(barrier), 0.5)
+            case dsl.Cashflow(_, _)   => Writer.value(PV(1.0))
+            case dsl.Spot(_, _)       => Writer.value(1.0)
+            case dsl.Callable(_, _)   => Writer.value(())
+            case dsl.Puttable(_, _)   => Writer.value(())
 
       def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
         new (dsl.RVA ~> Writer[Simulation.Spec[T], _]):
@@ -283,7 +298,7 @@ private[derifree] object Compiler:
                 0.5
               )
 
-            case dsl.Exercisable(_, time) =>
+            case dsl.Puttable(_, time) =>
               Writer(
                 Simulation.Spec.exerciseDate(time) |+| Simulation.Spec.discountObs(time),
                 ()
@@ -323,7 +338,12 @@ private[derifree] object Compiler:
                 WriterT(
                   Either
                     .fromOption(
-                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                      sim.timeIndex
+                        .get(time)
+                        .map(i =>
+                          // println(s"df: ${sim.discounts(i)}")
+                          PV(amount * sim.discounts(i))
+                        ),
                       Error.Generic(s"missing time index for discount time $time")
                     )
                     .map(pv => (Profile.cashflow(time, pv), pv))
@@ -485,22 +505,26 @@ private[derifree] object Compiler:
                     1 - p
                 WriterT.liftF(e)
 
-              case dsl.Exercisable(amount, time) =>
-                WriterT(
-                  Either
-                    .fromOption(
-                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
-                      Error.Generic(s"missing time index for discount time $time")
-                    )
-                    .map(pv => (Profile.putAmount(time, pv), ()))
+              case dsl.Puttable(amount, time) =>
+                amount.fold(WriterT.liftF(Either.right[Error, Unit](())))(amount =>
+                  WriterT(
+                    Either
+                      .fromOption(
+                        sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                        Error.Generic(s"missing time index for discount time $time")
+                      )
+                      .map(pv => (Profile.putAmount(time, pv), ()))
+                  )
                 )
 
               case dsl.Callable(amount, time) =>
-                WriterT(
-                  Either
-                    .fromOption(
-                      sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
-                      Error.Generic(s"missing time index for discount time $time")
-                    )
-                    .map(pv => (Profile.callAmount(time, pv), ()))
+                amount.fold(WriterT.liftF(Either.right[Error, Unit](())))(amount =>
+                  WriterT(
+                    Either
+                      .fromOption(
+                        sim.timeIndex.get(time).map(i => PV(amount * sim.discounts(i))),
+                        Error.Generic(s"missing time index for discount time $time")
+                      )
+                      .map(pv => (Profile.callAmount(time, pv), ()))
+                  )
                 )
