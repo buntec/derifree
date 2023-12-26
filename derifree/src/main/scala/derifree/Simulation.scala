@@ -49,7 +49,7 @@ object Simulation:
     given [T]: Monoid[Spec[T]] = new Monoid[Spec[T]]:
       def empty: Spec[T] = make()
       def combine(x: Spec[T], y: Spec[T]): Spec[T] =
-        // we cannot simply do <+> on spotObs b/c the
+        // we cannot simply combine spotObs b/c the
         // default monoid instance for Map will not combine values
         val spotObs = (x.spotObs.toList ++ y.spotObs.toList)
           .groupBy((udl, _) => udl)

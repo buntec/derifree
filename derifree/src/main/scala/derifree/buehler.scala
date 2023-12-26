@@ -15,10 +15,11 @@
  */
 
 package derifree
-package buehler
 
-def strikeToPureStrike(strike: Double, forward: Double, divFloor: Double): Double =
-  (strike - divFloor) / (forward - divFloor)
+private[derifree] object buehler:
 
-def pureStrikeToStrike(pureStrike: Double, forward: Double, divFloor: Double): Double =
-  pureStrike * (forward - divFloor) + divFloor
+  def strikeToPureStrike(strike: Double, forward: Double, divFloor: Double): Double =
+    (strike - divFloor) / (forward - divFloor)
+
+  def pureStrikeToStrike(pureStrike: Double, forward: Double, divFloor: Double): Double =
+    pureStrike * (forward - divFloor) + divFloor

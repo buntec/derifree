@@ -24,13 +24,13 @@ import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
 import collection.mutable
 import Lsm.*
 
-trait Lsm:
+private[derifree] trait Lsm:
 
   def toBasisFunctions(factors: IndexedSeq[Double]): IndexedSeq[Double]
 
   def toContValueEstimator(rows: Seq[(List[Double], Double)]): Either[Error, Estimator]
 
-object Lsm:
+private[derifree] object Lsm:
 
   enum Error extends derifree.Error:
     case BadNumericsException(override val getMessage: String)
