@@ -1,23 +1,42 @@
+/*
+ * Copyright 2023 buntec
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * NOTE: The following copyright notice applies to the original C++ code,
+ *
+ * ===========================================================================
+ *
+ * Copyright (C) 2002 Peter Jäckel "Monte Carlo Methods in Finance".
+ * All rights reserved.
+ *
+ * Permission to use, copy, modify, and distribute this software is freely
+ * granted, provided that this notice is preserved.
+ * ===========================================================================
+ */
+
 package derifree
 
 import org.apache.commons.math3.util.{FastMath => math}
 
-object BrownianBridge:
+private[derifree] object BrownianBridge:
 
   /** Transforms an array of standard normals into another array of standard normals. For
     * performance reasons this is done in-place and without allocations.
     */
   def transform(numberOfSteps: Int): Array[Double] => Unit =
-
-    // ===========================================================================
-    // NOTE: The following copyright notice applies to the original C++ code,
-    //
-    // Copyright (C) 2002 Peter Jäckel "Monte Carlo Methods in Finance".
-    // All rights reserved.
-    //
-    // Permission to use, copy, modify, and distribute this software is freely
-    // granted, provided that this notice is preserved.
-    // ===========================================================================
 
     val leftIndex, rightIndex, bridgeIndex = Array.fill(numberOfSteps)(0)
     val leftWeight, rightWeight, stddev = Array.fill(numberOfSteps)(0.0)
