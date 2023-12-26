@@ -64,7 +64,7 @@ val europeanUpAndOutCall = for
   _ <- cashflow(p * max(s / s0 - 1, 0), settle)
 yield ()
 
-val worstOfDownAndInPut = for
+val worstOfContinuousDownAndInPut = for
   s1_0 <- spot("AAPL", refTime)
   s2_0 <- spot("MSFT", refTime)
   s3_0 <- spot("GOOG", refTime)
@@ -82,12 +82,56 @@ val worstOfDownAndInPut = for
   _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
+val worstOfEuropeanDownAndInPut = for
+  s1_0 <- spot("AAPL", refTime)
+  s2_0 <- spot("MSFT", refTime)
+  s3_0 <- spot("GOOG", refTime)
+  s1 <- spot("AAPL", expiry)
+  s2 <- spot("MSFT", expiry)
+  s3 <- spot("GOOG", expiry)
+  p <- hitProb(
+    Barrier.Discrete(
+      Barrier.Direction.Down,
+      Map(
+        "AAPL" -> List((expiry, 0.8 * s1_0)),
+        "MSFT" -> List((expiry, 0.8 * s2_0)),
+        "GOOG" -> List((expiry, 0.8 * s3_0))
+      )
+    )
+  )
+  _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+yield ()
+
 val barrierReverseConvertible =
   val relBarrier = 0.7
-  val callTimes =
-    List(90, 180, 270, 360).map(refTime.plusDays)
-  val couponTimes =
-    List(91, 181, 271, 361).map(refTime.plusDays)
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    p <- hitProb(
+      Barrier.Continuous(
+        Barrier.Direction.Down,
+        Map(
+          "AAPL" -> relBarrier * s1_0,
+          "MSFT" -> relBarrier * s2_0,
+          "GOOG" -> relBarrier * s3_0
+        ),
+        from = refTime,
+        to = expiry
+      )
+    )
+    _ <- couponTimes.traverse_(t => cashflow(5.0, t))
+    _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+  yield ()
+
+val callableBarrierReverseConvertible =
+  val relBarrier = 0.7
+  val callTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
   for
     s1_0 <- spot("AAPL", refTime)
     s2_0 <- spot("MSFT", refTime)
@@ -138,16 +182,13 @@ val barrierReverseConvertible =
     val t1 = System.nanoTime()
     val result = cc.fairValueResult(sim, nSims)
     val t2 = System.nanoTime()
-    println("-")
     println(f"result = $result, duration = ${(t2 - t1) * 1e-6}%.0f ms")
-    println("-")
 
-  // printPrice(europeanCall)
-  // printPrice(europeanPut)
-  // printPrice(bermudanPut)
-  // printPrice(europeanUpAndOutCall)
-  // printPrice(worstOfDownAndInPut)
-
-  for (_ <- 0 until 1000) {
-    printPrice(barrierReverseConvertible)
-  }
+  printPrice(europeanCall)
+  printPrice(europeanPut)
+  printPrice(bermudanPut)
+  printPrice(europeanUpAndOutCall)
+  printPrice(worstOfContinuousDownAndInPut)
+  printPrice(worstOfEuropeanDownAndInPut)
+  printPrice(barrierReverseConvertible)
+  printPrice(callableBarrierReverseConvertible)

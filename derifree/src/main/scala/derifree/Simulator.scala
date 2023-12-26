@@ -70,6 +70,7 @@ object Simulator:
           .map(_.toMap)
 
         val udlsWithIndex = udls.zipWithIndex.toArray
+        val udlIndices = udls.indices.toArray
 
         val ts = timeGrid.yearFractions
         val tsArr = ts.toArray.asInstanceOf[Array[Double]]
@@ -140,10 +141,11 @@ object Simulator:
                     logspots(i)(j) + (r - 0.5 * v * v) * dtsArr(j) + v * sdts(j) * z(i)
                   i += 1
                 }
+
                 j += 1
               }
 
-              udls.indices.foreach: i =>
+              udlIndices.foreach: i =>
                 val idxs = spotObsIndices(i)
                 var j = 0
                 while (j < idxs.length) {
