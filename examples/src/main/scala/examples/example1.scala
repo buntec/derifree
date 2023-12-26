@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+package examples
 package example1
 
 import cats.*

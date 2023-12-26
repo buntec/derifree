@@ -14,14 +14,9 @@
  * limitations under the License.
  */
 
-package derifree
+package examples
+package example3
 
-import cats.*
-import cats.derived.*
+import cats.syntax.all.*
 
-case class FairValueResult[T](
-    fairValue: PV,
-    callProbabilities: Map[T, Double],
-    putProbabilities: Map[T, Double]
-) derives Show,
-      Eq
+@main def run: Unit = ???

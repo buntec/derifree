@@ -22,6 +22,7 @@ ThisBuild / tlFatalWarnings := false
 
 lazy val V = new {
   val cats = "2.10.0"
+  val catsTime = "0.5.1"
   val kittens = "3.1.0"
   val literally = "1.1.0"
   val commonsMath = "3.6.1"
@@ -40,6 +41,7 @@ lazy val derifree = (project in file("derifree"))
       "org.typelevel" %% "cats-free" % V.cats,
       "org.typelevel" %% "alleycats-core" % V.cats,
       "org.typelevel" %% "kittens" % V.kittens,
+      "org.typelevel" %% "cats-time" % V.catsTime,
       "org.typelevel" %% "literally" % V.literally,
       "org.apache.commons" % "commons-math3" % V.commonsMath,
       "org.ejml" % "ejml-all" % V.ejml,
