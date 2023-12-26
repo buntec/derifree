@@ -181,7 +181,7 @@ private[derifree] sealed trait Compiler[T]:
                 )
                 .map((factors, contValue, _, _) => (factors, contValue.toDouble))
               if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
-              then lsm0.toContValueEstimator(filteredRows).map(_.some)
+              then lsm0.continuationValueEstimator(filteredRows).map(_.some)
               else Right(None) // too few relevant paths for least-squares
             )
             val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>

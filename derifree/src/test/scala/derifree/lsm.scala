@@ -37,7 +37,7 @@ class LsmSuite extends munit.FunSuite:
       var sum = 0.0
       while (i < 64000) {
         val lsm = Lsm.fromPoly(3)
-        val est = lsm.toContValueEstimator(rows).toOption.get
+        val est = lsm.continuationValueEstimator(rows).toOption.get
         sum += est(IndexedSeq(0.4, 0.2))
         i += 1
       }

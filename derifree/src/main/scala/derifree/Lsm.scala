@@ -17,18 +17,15 @@
 package derifree
 
 import cats.syntax.all.*
-import org.apache.commons.math3.util.{FastMath => math}
 import org.ejml.data.DMatrixRMaj
 import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
 
-import collection.mutable
+import collection.immutable.ArraySeq
 import Lsm.*
 
 private[derifree] trait Lsm:
 
-  def toBasisFunctions(factors: IndexedSeq[Double]): IndexedSeq[Double]
-
-  def toContValueEstimator(rows: Seq[(List[Double], Double)]): Either[Error, Estimator]
+  def continuationValueEstimator(rows: Seq[(List[Double], Double)]): Either[Error, Estimator]
 
 private[derifree] object Lsm:
 
@@ -42,16 +39,18 @@ private[derifree] object Lsm:
 
   def fromPoly(maxDegree: Int): Lsm = new Lsm:
 
-    def toBasisFunctions(factors: IndexedSeq[Double]): IndexedSeq[Double] =
+    def basisFunctions(factors: IndexedSeq[Double]): IndexedSeq[Double] =
       monomials(factors, maxDegree)
 
-    def toContValueEstimator(rows: Seq[(List[Double], Double)]): Either[Error, Estimator] =
+    def continuationValueEstimator(
+        rows: Seq[(List[Double], Double)]
+    ): Either[Error, Estimator] =
       for
         _ <- Either.raiseWhen(rows.isEmpty)(Error.BadInputs("empty rows"))
         factors0 = rows.head(0)
         m = rows.length
-        nCoeffs = toBasisFunctions(factors0.toIndexedSeq).length
-        data = rows.flatMap((factors, _) => toBasisFunctions(factors.toIndexedSeq))
+        nCoeffs = basisFunctions(factors0.toIndexedSeq).length
+        data = rows.flatMap((factors, _) => basisFunctions(factors.toIndexedSeq))
         a <- Either
           .catchNonFatal(
             new DMatrixRMaj(
@@ -82,21 +81,27 @@ private[derifree] object Lsm:
         // println(s"coeffs: $coeffs")
         new Estimator:
           def apply(factors: IndexedSeq[Double]): Double =
-            (toBasisFunctions(factors) zip coeffs).map(_ * _).sum
+            (basisFunctions(factors) zip coeffs).map(_ * _).sum
 
-  // TODO: replace with more efficient implementation
   private def monomials(covariates: IndexedSeq[Double], maxDegree: Int): IndexedSeq[Double] =
-    def powers(indices: List[Int]): mutable.Map[Int, Int] =
-      val res = mutable.Map.empty[Int, Int]
-      indices.foreach(i =>
-        res.updateWith(i):
-          case Some(n) => Some(n + 1)
-          case None    => Some(1)
-      )
-      res
+    def go(start: Int, maxDegree: Int): Array[Double] =
+      val b = Array.newBuilder[Double]
+      var i = 0
+      val x0 = covariates(start)
+      var xp = 1.0
+      if (start < covariates.length - 1) {
+        while (i <= maxDegree) {
+          b.addAll(go(start + 1, maxDegree - i).map(_ * xp))
+          xp *= x0
+          i += 1
+        }
+      } else {
+        while (i <= maxDegree) {
+          b.addOne(xp)
+          xp *= x0
+          i += 1
+        }
+      }
+      b.result()
 
-    (0 to maxDegree)
-      .flatMap(degree => covariates.indices.toList.replicateA(degree))
-      .map(powers)
-      .distinct
-      .map(_.map((i, n) => math.pow(covariates(i), n)).product)
+    ArraySeq.unsafeWrapArray(go(0, maxDegree))

@@ -185,6 +185,10 @@ val callableBarrierReverseConvertible =
     val t2 = System.nanoTime()
     println(f"result = $result, duration = ${(t2 - t1) * 1e-6}%.0f ms")
 
+  // for (_ <- 0 until 10000) {
+  //   printPrice(callableBarrierReverseConvertible)
+  // }
+
   printPrice(europeanCall)
   printPrice(europeanPut)
   printPrice(bermudanPut)
