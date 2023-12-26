@@ -23,6 +23,8 @@ import scala.annotation.targetName
 private val doubleOrdering: Ordering[Double] = Ordering[Double]
 private val doubleFractional = Fractional[Double]
 private val doubleMonoid = Monoid[Double]
+private val doubleShow: Show[Double] = Show[Double]
+private val doubleEq: Eq[Double] = Eq[Double]
 private val longOrdering: Ordering[Long] = Ordering[Long]
 
 /** Present value */
@@ -35,6 +37,10 @@ object PV {
   given Fractional[PV] = doubleFractional
 
   given Monoid[PV] = doubleMonoid
+
+  given Show[PV] = doubleShow
+
+  given Eq[PV] = doubleEq
 
   extension (pv: PV)
     private[derifree] def toDouble: Double = pv

@@ -48,28 +48,17 @@ private[derifree] sealed trait Compiler[T]:
       simulator: Simulator[T],
       nSims: Int,
       rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, PV] =
+  )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
     val spec0 = spec(dsl)(rv)
-    // println(s"spec: $spec0")
-    if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
-      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map: (pv, _) =>
-        // println(s"early term prob: ${probs.values.sum}")
-        pv
+    if spec0.callTimes.nonEmpty || spec0.putTimes.nonEmpty then
+      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv)
     else
       simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
           (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
             (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).toList.sum), 1)
           )
-        sumE.map(_ / n)
-
-  def earlyTerminationProbabilities[A](
-      dsl: Dsl[T],
-      simulator: Simulator[T],
-      nSims: Int,
-      rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
-    fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map(_(1))
+        sumE.map(_ / n).map(pv => FairValueResult(pv, Map.empty, Map.empty))
 
   // returns pv + call/put probabilities
   private def fairValueByLsm[A](
@@ -78,11 +67,11 @@ private[derifree] sealed trait Compiler[T]:
       nSimsLsm: Int,
       nSims: Int,
       rv: dsl.RV[A]
-  )(using TimeLike[T]): Either[derifree.Error, (PV, Map[T, Double])] =
+  )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
     val estimatorsMapE = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
     val spec0 = spec(dsl)(rv)
-    val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
-    val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
+    val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
+    val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
     // println(s"combined spec: $combinedSpec")
     val sumE = simulator(combinedSpec, nSims, nSimsLsm).flatMap: sims =>
@@ -90,8 +79,8 @@ private[derifree] sealed trait Compiler[T]:
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = profile(dsl, sim, rv)
         (estimatorsMapE, factorsE, profileE).mapN((estimators, factors, profile) =>
-          val earlyTerminationDateAndAmount =
-            (etDates zip factors).collectFirstSome:
+          val earlyExerciseDateAndAmount =
+            (earlyExTimes zip factors).collectFirstSome:
               case (t, fac) =>
                 estimators
                   .get(t)
@@ -101,28 +90,39 @@ private[derifree] sealed trait Compiler[T]:
                     val estContValue = estimator(fac.toIndexedSeq)
                     (callAmountMaybe, putAmountMaybe) match
                       case (Some(c), None) if c.toDouble < estContValue =>
-                        // println(s"calling: t=$t, pv=$c, cont value=$estContValue, factors=$fac")
-                        Some((t, c))
+                        Some((t, c, true))
                       case (None, Some(p)) if p.toDouble > estContValue =>
-                        // println(s"putting: t=$t, pv=$p, cont value=$estContValue, factors=$fac")
-                        Some((t, p))
+                        Some((t, p, false))
                       case (Some(c), Some(p)) =>
-                        if c.toDouble < estContValue then Some((t, c))
-                        else if p.toDouble > estContValue then Some((t, p))
+                        if c.toDouble < estContValue then Some((t, c, true))
+                        else if p.toDouble > estContValue then Some((t, p, false))
                         else None
                       case _ => None
 
-          earlyTerminationDateAndAmount.fold(
-            profile.cashflows.map(_(1)).toList.sum -> Counter.empty[T, Int]
-          )((t, amount) =>
+          earlyExerciseDateAndAmount.fold(
+            (
+              profile.cashflows.map(_(1)).toList.sum,
+              Counter.empty[T, Int],
+              Counter.empty[T, Int]
+            )
+          )((t, amount, isCall) =>
             val cashflowsUntil = profile.cashflows.filter(_(0) <= t).map(_(1)).toList.sum
-            // println(s"et: t=$t, pv=$amount, cfs until=$cashflowsUntil")
-            amount + cashflowsUntil -> Counter(t -> 1)
+            (
+              amount + cashflowsUntil,
+              if isCall then Counter(t -> 1) else Counter.empty[T, Int],
+              if isCall then Counter.empty[T, Int] else Counter(t -> 1)
+            )
           )
         )
-    sumE.map((pv, nEarlyTerminations) =>
-      pv / nSims -> (nEarlyTerminations |+| Counter(etDates.map(_ -> 0)*)).toMap.map((k, n) =>
-        k -> n.toDouble / nSims
+    sumE.map((pv, nCalls, nPuts) =>
+      FairValueResult(
+        pv / nSims,
+        (nCalls |+| Counter(spec0.callTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
+          k -> n.toDouble / nSims
+        ),
+        (nPuts |+| Counter(spec0.putTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
+          k -> n.toDouble / nSims
+        )
       )
     )
 
@@ -152,7 +152,7 @@ private[derifree] sealed trait Compiler[T]:
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.fromPoly(3)
     val spec0 = spec(dsl)(rv)
-    val etDates = (spec0.callDates union spec0.exerciseDates).toList.sorted
+    val etDates = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
     simulator(combinedSpec, nSims, offset).flatMap: sims0 =>

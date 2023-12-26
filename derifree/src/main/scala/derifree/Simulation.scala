@@ -24,8 +24,8 @@ object Simulation:
   case class Spec[T](
       spotObs: Map[String, Set[T]],
       discountObs: Set[T],
-      exerciseDates: Set[T],
-      callDates: Set[T]
+      putTimes: Set[T],
+      callTimes: Set[T]
   )
 
   object Spec:
@@ -57,8 +57,8 @@ object Simulation:
         make(
           spotObs,
           x.discountObs |+| y.discountObs,
-          x.exerciseDates |+| y.exerciseDates,
-          x.callDates |+| y.callDates
+          x.putTimes |+| y.putTimes,
+          x.callTimes |+| y.callTimes
         )
 
   /** Relization of a piecewise diffusion. */

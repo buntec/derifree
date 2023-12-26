@@ -132,22 +132,22 @@ val barrierReverseConvertible =
       rate
     )
 
-  val nSims = (1 << 16) - 1
+  val nSims = (1 << 15) - 1
 
   def printPrice(cc: ContingentClaim) =
     val t1 = System.nanoTime()
-    val price = cc.fairValue(sim, nSims)
+    val result = cc.fairValueResult(sim, nSims)
     val t2 = System.nanoTime()
-    println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")
+    println("-")
+    println(f"result = $result, duration = ${(t2 - t1) * 1e-6}%.0f ms")
+    println("-")
 
-    val t3 = System.nanoTime()
-    val probs = cc.earlyTerminationProbabilities(sim, nSims)
-    val t4 = System.nanoTime()
-    println(f"call probs = $probs, duration = ${(t4 - t3) * 1e-6}%.0f ms")
+  // printPrice(europeanCall)
+  // printPrice(europeanPut)
+  // printPrice(bermudanPut)
+  // printPrice(europeanUpAndOutCall)
+  // printPrice(worstOfDownAndInPut)
 
-  printPrice(europeanCall)
-  printPrice(europeanPut)
-  printPrice(bermudanPut)
-  printPrice(europeanUpAndOutCall)
-  printPrice(worstOfDownAndInPut)
-  printPrice(barrierReverseConvertible)
+  for (_ <- 0 until 1000) {
+    printPrice(barrierReverseConvertible)
+  }

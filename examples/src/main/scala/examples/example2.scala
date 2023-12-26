@@ -67,7 +67,6 @@ yield ()
 
   (0 until 1000).foreach: _ =>
     val t1 = System.nanoTime()
-    // val price = worstOfDip.mean(sim, nSims)
     val price = worstOfDip.fairValue(sim, nSims)
     val t2 = System.nanoTime()
     println(f"price = $price, duration = ${(t2 - t1) * 1e-6}%.0f ms")

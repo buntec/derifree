@@ -72,11 +72,11 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
-  def exercisable(amount: Option[Double], time: T): RV[Unit] =
+  def puttable(amount: Option[Double], time: T): RV[Unit] =
     liftF[RVA, Unit](Puttable(amount, time))
 
-  /** Alias for `exercisable`. */
-  def puttable(amount: Option[Double], time: T): RV[Unit] =
+  /** Alias for `puttable`. */
+  def exercisable(amount: Option[Double], time: T): RV[Unit] =
     liftF[RVA, Unit](Puttable(amount, time))
 
   def callable(amount: Option[Double], time: T): RV[Unit] =
@@ -98,13 +98,25 @@ trait Dsl[T]:
         simulator: Simulator[T],
         nSims: Int
     )(using TimeLike[T]): Either[derifree.Error, PV] =
+      Compiler[T].fairValue(self, simulator, nSims, cc).map(_.fairValue)
+
+    def fairValueResult(
+        simulator: Simulator[T],
+        nSims: Int
+    )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
       Compiler[T].fairValue(self, simulator, nSims, cc)
 
-    def earlyTerminationProbabilities(
+    def callProbabilities(
         simulator: Simulator[T],
         nSims: Int
     )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
-      Compiler[T].earlyTerminationProbabilities(self, simulator, nSims, cc)
+      Compiler[T].fairValue(self, simulator, nSims, cc).map(_.callProbabilities)
+
+    def putProbabilities(
+        simulator: Simulator[T],
+        nSims: Int
+    )(using TimeLike[T]): Either[derifree.Error, Map[T, Double]] =
+      Compiler[T].fairValue(self, simulator, nSims, cc).map(_.putProbabilities)
 
 object Dsl:
 
