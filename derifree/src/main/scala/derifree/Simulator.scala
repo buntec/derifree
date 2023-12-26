@@ -53,10 +53,12 @@ object Simulator:
           .traverse((t, yf) => timeGrid.indexOf(yf).tupleLeft(t))
           .map(_.toMap)
 
-        val ts = timeGrid.yearFractions
-        // println(s"time grid: $ts")
+        val udlsWithIndex = udls.zipWithIndex.toArray
 
+        val ts = timeGrid.yearFractions
+        val tsArr = ts.toArray.asInstanceOf[Array[Double]]
         val dts = timeGrid.deltas
+        val dtsArr = dts.toArray.asInstanceOf[Array[Double]]
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
         val spots0 = udls.map(udl => spots(udl)).toArray
@@ -89,7 +91,7 @@ object Simulator:
           discounts(0) = 1.0
           var j = 1
           while (j < nt) {
-            discounts(j) = math.exp(-rate * ts(j))
+            discounts(j) = math.exp(-r * tsArr(j))
             j += 1
           }
           val discounts0 = ArraySeq.unsafeWrapArray(discounts)
@@ -118,9 +120,8 @@ object Simulator:
                 while (i < nUdl) {
                   val v = vols(i)(j)
                   vols(i)(j + 1) = v
-                  // println(s"z=${z(i)}, v=$v, sdt=${sdts(j)}")
                   logspots(i)(j + 1) =
-                    logspots(i)(j) + (r - 0.5 * v * v) * dts(j).toDouble + v * sdts(j) * z(i)
+                    logspots(i)(j) + (r - 0.5 * v * v) * dtsArr(j) + v * sdts(j) * z(i)
                   i += 1
                 }
                 j += 1
@@ -135,28 +136,30 @@ object Simulator:
                   j += 1
                 }
 
+              val spotsMB = Map.newBuilder[String, IndexedSeq[Double]]
+              val logspotsMB = Map.newBuilder[String, IndexedSeq[Double]]
+              val jumpsMB = Map.newBuilder[String, IndexedSeq[Double]]
+              val volsMB = Map.newBuilder[String, IndexedSeq[Vol]]
+
+              udlsWithIndex.foreach: (udl, i) =>
+                spotsMB.addOne(udl, ArraySeq.unsafeWrapArray(spots(i).clone))
+                logspotsMB.addOne(udl, ArraySeq.unsafeWrapArray(logspots(i).clone))
+                jumpsMB.addOne(udl, ArraySeq.unsafeWrapArray(jumps(i).clone))
+                volsMB.addOne(
+                  udl,
+                  ArraySeq.unsafeWrapArray(vols(i).clone).asInstanceOf[IndexedSeq[Vol]]
+                )
+
               Some(
                 Simulation
                   .Realization[T](
                     timeIndex,
                     ts,
                     dts,
-                    udls.zipWithIndex
-                      .map((udl, i) => udl -> ArraySeq.unsafeWrapArray(spots(i).clone))
-                      .toMap,
-                    udls.zipWithIndex
-                      .map((udl, i) => udl -> ArraySeq.unsafeWrapArray(logspots(i).clone))
-                      .toMap,
-                    udls.zipWithIndex
-                      .map((udl, i) => udl -> ArraySeq.unsafeWrapArray(jumps(i).clone))
-                      .toMap,
-                    udls.zipWithIndex
-                      .map((udl, i) =>
-                        udl -> ArraySeq
-                          .unsafeWrapArray(vols(i).clone)
-                          .asInstanceOf[IndexedSeq[Vol]]
-                      )
-                      .toMap,
+                    spotsMB.result,
+                    logspotsMB.result,
+                    jumpsMB.result,
+                    volsMB.result,
                     discounts0
                   ),
                 (count + 1, nextNormalState)

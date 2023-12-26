@@ -31,6 +31,7 @@ lazy val root = tlCrossRootProject.aggregate(derifree, examples)
 lazy val derifree = (project in file("derifree"))
   .settings(
     name := "derifree",
+    fork := true,
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-core" % V.cats,
       "org.typelevel" %% "cats-free" % V.cats,
@@ -44,4 +45,5 @@ lazy val derifree = (project in file("derifree"))
 
 lazy val examples = (project in file("examples"))
   .enablePlugins(NoPublishPlugin)
+  .settings(fork := true)
   .dependsOn(derifree)
