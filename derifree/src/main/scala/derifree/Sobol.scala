@@ -53,10 +53,10 @@ package derifree
 import cats.data.{State => cState}
 import cats.syntax.all.*
 
+import java.io.FileNotFoundException
 import scala.collection.immutable.ArraySeq
 
 import Sobol.*
-import java.io.FileNotFoundException
 
 /*
  * https://web.maths.unsw.edu.au/~fkuo/sobol/

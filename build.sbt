@@ -6,6 +6,8 @@ ThisBuild / tlBaseVersion := "0.0"
 lazy val scala3 = "3.3.1"
 ThisBuild / scalaVersion := scala3
 ThisBuild / crossScalaVersions := Seq(scala3)
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 ThisBuild / organization := "io.github.buntec"
 ThisBuild / organizationName := "buntec"

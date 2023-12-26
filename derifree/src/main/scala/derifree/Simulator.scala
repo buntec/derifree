@@ -22,8 +22,8 @@ import derifree.Simulation.Realization
 import derifree.Simulation.Spec
 import org.apache.commons.math3.util.{FastMath => math}
 
-import scala.collection.immutable.ArraySeq
 import scala.collection.View
+import scala.collection.immutable.ArraySeq
 
 trait Simulator[T]:
 

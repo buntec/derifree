@@ -17,13 +17,12 @@
 package derifree
 
 import cats.syntax.all.*
+import org.apache.commons.math3.util.{FastMath => math}
+import org.ejml.data.DMatrixRMaj
+import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
 
 import collection.mutable
-
 import Lsm.*
-import org.apache.commons.math3.util.{FastMath => math}
-import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
-import org.ejml.data.DMatrixRMaj
 
 trait Lsm:
 

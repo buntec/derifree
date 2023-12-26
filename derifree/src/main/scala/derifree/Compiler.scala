@@ -18,6 +18,7 @@ package derifree
 
 import alleycats.std.iterable.*
 import cats.Monoid
+import cats.data.Chain
 import cats.data.Writer
 import cats.data.WriterT
 import cats.free.Free
@@ -27,7 +28,6 @@ import derifree.syntax.given
 import org.apache.commons.math3.util.{FastMath => math}
 
 import Compiler.*
-import cats.data.Chain
 
 private[derifree] sealed trait Compiler[T]:
 

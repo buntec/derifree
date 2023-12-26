@@ -17,7 +17,7 @@
 package derifree
 
 import cats.kernel.Order
-//import cats.syntax.all.*
+
 import java.time.Instant
 
 trait TimeLike[T] extends Order[T]:

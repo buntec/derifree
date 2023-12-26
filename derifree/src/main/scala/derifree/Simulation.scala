@@ -16,8 +16,8 @@
 
 package derifree
 
-import cats.syntax.all.*
 import cats.Monoid
+import cats.syntax.all.*
 
 object Simulation:
 

@@ -19,6 +19,7 @@ package derifree.utils
 import cats.syntax.all.*
 import org.ejml.data.DMatrixRMaj
 import org.ejml.dense.row.factory.DecompositionFactory_DDRM
+
 import scala.collection.immutable.ArraySeq
 
 private[derifree] def cholesky(
