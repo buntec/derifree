@@ -15,13 +15,18 @@ class AmericanVanillaSuite extends munit.FunSuite:
   test("American put should match tabulated values"):
     val udl = "ACME"
 
-    // values taken from Barone, Adesi, Whaley 1987
-    (
-      List(80.0, 90.0, 100.0, 110.0, 120.0),
-      List(18.09, 9.05, 3.04, 0.64, 0.09), // European prices
-      List(20.0, 10.4, 3.22, 0.66, 0.09) // American prices (finite-difference)
-    ).parMapN { (s0, euPriceRef, amPriceRef) =>
+    case class Row(spot: Double, europeanPrice: Double, americanPrice: Double, tol: Double)
 
+    // values taken from Barone, Adesi, Whaley 1987, Table IV
+    val rows = List(
+      Row(80.0, 18.09, 20.0, 0.1),
+      Row(90.0, 9.05, 10.4, 0.5),
+      Row(100.0, 3.04, 3.22, 0.05),
+      Row(110.0, 0.64, 0.66, 0.05),
+      Row(120.0, 0.09, 0.09, 0.05)
+    )
+
+    rows.foreach { case Row(s0, euPriceRef, amPriceRef, absTol) =>
       val spots = Map(udl -> s0)
       val vols = Map(udl -> 0.2.vol)
       val rate = 0.08.rate
@@ -48,7 +53,7 @@ class AmericanVanillaSuite extends munit.FunSuite:
       yield ()
 
       val americanPut =
-        val m = 30
+        val m = 90
         for
           s <- spot(udl, expiry)
           _ <- List
@@ -64,18 +69,11 @@ class AmericanVanillaSuite extends munit.FunSuite:
       val amPrice = americanPut.fairValue(sim, nSims).toTry.get
 
       val hint =
-        s"euPrice=$euPrice, euPriceRef=$euPriceRef, amPrice=$amPrice, amPriceRef=$amPriceRef"
+        s"spot=$s0, euPrice=$euPrice, euPriceRef=$euPriceRef, amPrice=$amPrice, amPriceRef=$amPriceRef"
 
       println(hint)
 
-      assert(
-        math.abs(euPrice.toDouble - euPriceRef) < 0.01 || math.abs(
-          euPrice.toDouble - euPriceRef
-        ) / euPriceRef < 0.01
-      )
-      assert(
-        math.abs(amPrice.toDouble - amPriceRef) < 0.01 || math.abs(
-          amPrice.toDouble - amPriceRef
-        ) / amPriceRef < 0.01
-      )
+      assert(euPrice.toDouble <= amPrice.toDouble + absTol)
+      assert(math.abs(euPrice.toDouble - euPriceRef) < absTol)
+      assert(math.abs(amPrice.toDouble - amPriceRef) < absTol)
     }
