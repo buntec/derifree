@@ -45,7 +45,8 @@ lazy val derifree = (project in file("derifree"))
       "org.typelevel" %% "literally" % V.literally,
       "org.apache.commons" % "commons-math3" % V.commonsMath,
       "org.ejml" % "ejml-all" % V.ejml,
-      "org.scalameta" %% "munit" % V.scalameta % Test
+      "org.scalameta" %% "munit" % V.scalameta % Test,
+      "org.scalameta" %% "munit-scalacheck" % V.scalameta % Test
     )
   )
 
