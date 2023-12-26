@@ -21,11 +21,10 @@ object PV {
   given Monoid[PV] = doubleMonoid
 
   extension (pv: PV)
-    def toDouble: Double = pv
+    private[derifree] def toDouble: Double = pv
     def *(a: Double): PV = a * pv
     def +(rhs: PV): PV = pv + rhs
     def /(n: Int): PV = pv / n
-    def divideByInt(n: Int): PV = pv / n
 
 }
 
@@ -37,7 +36,7 @@ object Rate:
   def apply(r: Double): Rate = r
 
   extension (r: Rate)
-    def toDouble: Double = r
+    private[derifree] def toDouble: Double = r
     def *(t: YearFraction): Double = r * t
     def unary_- : Rate = -r
 
@@ -57,7 +56,7 @@ object YearFraction:
   given Ordering[YearFraction] = doubleOrdering
 
   extension (t: YearFraction)
-    def toDouble: Double = t
+    private[derifree] def toDouble: Double = t
     def -(rhs: YearFraction): YearFraction = t - rhs
     def <(rhs: YearFraction): Boolean = t < rhs
     def +(rhs: YearFraction): YearFraction = t + rhs
@@ -89,7 +88,7 @@ object Var:
   def apply(v: Double): Var = v
 
   extension (v: Var)
-    def toDouble: Double = v
+    private[derifree] def toDouble: Double = v
     def +(rhs: Var): Var = v + rhs
     def *(rhs: YearFraction): Double = v * rhs
 
@@ -101,7 +100,7 @@ object Vol:
   def apply(v: Double): Vol = v
 
   extension (v: Vol)
-    def toDouble: Double = v
+    private[derifree] def toDouble: Double = v
     def +(rhs: Vol): Vol = v + rhs
     def *(rhs: Vol): Var = v * rhs
 
