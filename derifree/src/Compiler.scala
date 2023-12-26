@@ -11,6 +11,7 @@ import derifree.syntax.given
 import org.apache.commons.math3.util.{FastMath => math}
 
 import Compiler.*
+import cats.data.Chain
 
 private[derifree] sealed trait Compiler[T]:
 
@@ -35,14 +36,14 @@ private[derifree] sealed trait Compiler[T]:
     val spec0 = spec(dsl)(rv)
     // println(s"spec: $spec0")
     if spec0.callDates.nonEmpty || spec0.exerciseDates.nonEmpty then
-      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map: (pv, probs) =>
-        println(s"early term prob: ${probs.values.sum}")
+      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv).map: (pv, _) =>
+        // println(s"early term prob: ${probs.values.sum}")
         pv
     else
       simulator(spec0, nSims, 0).flatMap: sims =>
         val (sumE, n) =
           (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
-            (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1)
+            (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).toList.sum), 1)
           )
         sumE.map(_ / n)
 
@@ -96,9 +97,9 @@ private[derifree] sealed trait Compiler[T]:
                       case _ => None
 
           earlyTerminationDateAndAmount.fold(
-            profile.cashflows.map(_(1)).sum -> Counter.empty[T, Int]
+            profile.cashflows.map(_(1)).toList.sum -> Counter.empty[T, Int]
           )((t, amount) =>
-            val cashflowsUntil = profile.cashflows.filter(_(0) <= t).map(_(1)).sum
+            val cashflowsUntil = profile.cashflows.filter(_(0) <= t).map(_(1)).toList.sum
             // println(s"et: t=$t, pv=$amount, cfs until=$cashflowsUntil")
             amount + cashflowsUntil -> Counter(t -> 1)
           )
@@ -152,6 +153,7 @@ private[derifree] sealed trait Compiler[T]:
                 val contValue = profile.cashflows
                   .filter((t, _) => t > etDate && nextEtDateMaybe.forall(t < _))
                   .map(_(1))
+                  .toIterable
                   .sum + futCf
                 val callAmountMaybe = profile.callAmounts.find((t, _) => t == etDate).map(_(1))
                 val putAmountMaybe = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
@@ -224,18 +226,21 @@ private[derifree] sealed trait Compiler[T]:
 private[derifree] object Compiler:
 
   case class Profile[T](
-      cashflows: List[(T, PV)],
-      callAmounts: List[(T, PV)],
-      putAmounts: List[(T, PV)]
+      cashflows: Chain[(T, PV)],
+      callAmounts: Chain[(T, PV)],
+      putAmounts: Chain[(T, PV)]
   )
 
   object Profile:
-    def cashflow[T](time: T, amount: PV) = Profile[T](List((time, amount)), Nil, Nil)
-    def callAmount[T](time: T, amount: PV) = Profile[T](Nil, List((time, amount)), Nil)
-    def putAmount[T](time: T, amount: PV) = Profile[T](Nil, Nil, List((time, amount)))
+    def cashflow[T](time: T, amount: PV) =
+      Profile[T](Chain((time, amount)), Chain.empty, Chain.empty)
+    def callAmount[T](time: T, amount: PV) =
+      Profile[T](Chain.empty, Chain((time, amount)), Chain.empty)
+    def putAmount[T](time: T, amount: PV) =
+      Profile[T](Chain.empty, Chain.empty, Chain((time, amount)))
 
   given [T]: Monoid[Profile[T]] = new Monoid[Profile[T]]:
-    def empty: Profile[T] = Profile[T](Nil, Nil, Nil)
+    def empty: Profile[T] = Profile[T](Chain.empty, Chain.empty, Chain.empty)
     def combine(x: Profile[T], y: Profile[T]): Profile[T] =
       Profile[T](
         x.cashflows |+| y.cashflows,
