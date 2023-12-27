@@ -14,6 +14,7 @@ import derifree.*
 import derifree.literals.*
 import derifree.syntax.*
 
+// use any time type with a `TimeLike` instance
 val dsl = Dsl[java.time.Instant]
 import dsl.*
 
@@ -25,6 +26,18 @@ val europeanCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(s / s0 - 1, 0), settle)
+yield ()
+
+val europeanUpAndOutCall = for
+  s0 <- spot("AAPL", refTime)
+  s <- spot("AAPL", expiry)
+  p <- survivalProb(
+    Barrier.Discrete(
+      Barrier.Direction.Up,
+      Map("AAPL" -> List((expiry, 1.5 * s0)))
+    )
+  )
+  _ <- cashflow(p * max(s / s0 - 1, 0), settle)
 yield ()
 
 val europeanPut = for
@@ -42,18 +55,6 @@ val bermudanPut = for
     )
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(1 - s / s0, 0), settle)
-yield ()
-
-val europeanUpAndOutCall = for
-  s0 <- spot("AAPL", refTime)
-  s <- spot("AAPL", expiry)
-  p <- survivalProb(
-    Barrier.Discrete(
-      Barrier.Direction.Up,
-      Map("AAPL" -> List((expiry, 1.2 * s0)))
-    )
-  )
-  _ <- cashflow(p * max(s / s0 - 1, 0), settle)
 yield ()
 
 val worstOfContinuousDownAndInPut = for
@@ -148,13 +149,11 @@ val callableBarrierReverseConvertible =
     _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
+// let's price using a simple Black-Scholes model
+
 val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
-
-val vols = Map("AAPL" -> 0.37.vol, "MSFT" -> 0.31.vol, "GOOG" -> 0.33.vol)
-
-val correlations =
-Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
-
+val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
+val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
 val rate = 0.05.rate
 
 val dirNums = Sobol.directionNumbers(5000).toTry.get
@@ -176,12 +175,24 @@ val nSims = 32767
 ```scala mdoc
 europeanCall.fairValue(sim, nSims)
 
+// should be cheaper than plain European call
+europeanUpAndOutCall.fairValue(sim, nSims)
+
 europeanPut.fairValue(sim, nSims)
 
+// should be more expensive than European put
 bermudanPut.fairValue(sim, nSims)
 
 bermudanPut.putProbabilities(sim, nSims)
 
+worstOfContinuousDownAndInPut.fairValue(sim, nSims)
+
+// should be cheaper than continuous barrier
+worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
+
+barrierReverseConvertible.fairValue(sim, nSims)
+
+// should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
 
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
