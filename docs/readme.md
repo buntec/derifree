@@ -7,7 +7,7 @@ implement a contract definition language for equity derivatives.
 
 ## Examples
 
-```scala
+```scala mdoc:silent
 import cats.*
 import cats.syntax.all.*
 import derifree.*
@@ -173,36 +173,16 @@ Simulator.blackScholes(
 val nSims = 32767
 ```
 
-```scala
+```scala mdoc
 europeanCall.fairValue(sim, nSims)
-// res0: Either[Error, PV] = Right(value = 0.16876819953535963)
 
 europeanPut.fairValue(sim, nSims)
-// res1: Either[Error, PV] = Right(value = 0.12005830195618698)
 
 bermudanPut.fairValue(sim, nSims)
-// res2: Either[Error, PV] = Right(value = 0.12405844388377392)
 
 bermudanPut.putProbabilities(sim, nSims)
-// res3: Either[Error, Map[Instant, Double]] = Right(
-//   value = Map(
-//     2023-09-28T18:00:00Z -> 0.15707876827295755,
-//     2023-04-01T18:00:00Z -> 0.04016235847041231,
-//     2023-12-27T18:00:00Z -> 0.10843226416821802,
-//     2023-06-30T18:00:00Z -> 0.10135196996978668
-//   )
-// )
 
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res4: Either[Error, PV] = Right(value = 99.17636094773215)
 
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
-// res5: Either[Error, Map[Instant, Double]] = Right(
-//   value = Map(
-//     2023-09-28T18:00:00Z -> 0.10998870815149388,
-//     2023-04-01T18:00:00Z -> 0.0013428144169438765,
-//     2023-12-27T18:00:00Z -> 0.11050752281258583,
-//     2023-06-30T18:00:00Z -> 0.009491256447035128
-//   )
-// )
 ```

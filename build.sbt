@@ -50,6 +50,16 @@ lazy val derifree = (project in file("derifree"))
     )
   )
 
+lazy val docs = (project in file("derifree-docs"))
+  .enablePlugins(MdocPlugin)
+  .settings(
+    mdocOut := file("."),
+    mdocVariables := Map(
+      "VERSION" -> version.value
+    )
+  )
+  .dependsOn(derifree)
+
 lazy val examples = (project in file("examples"))
   .enablePlugins(NoPublishPlugin)
   .settings(fork := true)
