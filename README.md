@@ -158,7 +158,7 @@ val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
 val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
 val rate = 0.05.rate
 
-val dirNums = Sobol.directionNumbers(1000).toTry.get
+val dirNums = Sobol.directionNumbers(10000).toTry.get
 
 val sim: Simulator[java.time.Instant] =
 Simulator.blackScholes(
@@ -190,6 +190,7 @@ europeanPut.fairValue(sim, nSims)
 bermudanPut.fairValue(sim, nSims)
 // res3: Either[Error, PV] = Right(value = 0.07099091173390065)
 
+// what are the probabilities of early exercise?
 bermudanPut.putProbabilities(sim, nSims)
 // res4: Either[Error, Map[Instant, Double]] = Right(
 //   value = Map(
@@ -201,29 +202,27 @@ bermudanPut.putProbabilities(sim, nSims)
 // )
 
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
-// res5: Either[Error, PV] = Left(
-//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
-// )
+// res5: Either[Error, PV] = Right(value = 0.11952007594501517)
 
 // should be cheaper than continuous barrier
 worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
-// res6: Either[Error, PV] = Left(
-//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
-// )
+// res6: Either[Error, PV] = Right(value = 0.09498951398431023)
 
 barrierReverseConvertible.fairValue(sim, nSims)
-// res7: Either[Error, PV] = Left(
-//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
-// )
+// res7: Either[Error, PV] = Right(value = 106.09836341818905)
 
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res8: Either[Error, PV] = Left(
-//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
-// )
+// res8: Either[Error, PV] = Right(value = 105.49635516689708)
 
+// what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
-// res9: Either[Error, Map[Instant, Double]] = Left(
-//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
+// res9: Either[Error, Map[Instant, Double]] = Right(
+//   value = Map(
+//     2024-09-22T18:00:00Z -> 0.15909298989837337,
+//     2024-03-26T18:00:00Z -> 0.00173955504013184,
+//     2024-12-21T18:00:00Z -> 0.16666158024842068,
+//     2024-06-24T18:00:00Z -> 0.006286812952055422
+//   )
 // )
 ```

@@ -158,7 +158,7 @@ val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
 val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
 val rate = 0.05.rate
 
-val dirNums = Sobol.directionNumbers(1000).toTry.get
+val dirNums = Sobol.directionNumbers(10000).toTry.get
 
 val sim: Simulator[java.time.Instant] =
 Simulator.blackScholes(
@@ -186,6 +186,7 @@ europeanPut.fairValue(sim, nSims)
 // should be more expensive than European put
 bermudanPut.fairValue(sim, nSims)
 
+// what are the probabilities of early exercise?
 bermudanPut.putProbabilities(sim, nSims)
 
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
@@ -198,5 +199,6 @@ barrierReverseConvertible.fairValue(sim, nSims)
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
 
+// what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
 ```
