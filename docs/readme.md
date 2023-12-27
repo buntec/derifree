@@ -2,8 +2,10 @@
 
 Derivative pricing for the ~~lactose~~ side-effect intolerant.
 
-This is an experimental library exploring the use of free monads to
-implement a contract definition language for equity derivatives.
+Derifree is an experimental library exploring the use of free monads to
+implement a contract definition language for (equity) derivatives.
+
+*This is work in progress!*
 
 ## Examples
 
@@ -18,7 +20,7 @@ import derifree.syntax.*
 val dsl = Dsl[java.time.Instant]
 import dsl.*
 
-val refTime = i"2023-01-01T18:00:00Z"
+val refTime = i"2023-12-27T18:00:00Z"
 val expiry = refTime.plusDays(365)
 val settle = expiry.plusDays(2)
 
@@ -156,7 +158,7 @@ val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
 val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
 val rate = 0.05.rate
 
-val dirNums = Sobol.directionNumbers(5000).toTry.get
+val dirNums = Sobol.directionNumbers(1000).toTry.get
 
 val sim: Simulator[java.time.Instant] =
 Simulator.blackScholes(
@@ -169,6 +171,7 @@ Simulator.blackScholes(
   rate
 )
 
+// the number of Monte Carlo simulations
 val nSims = 32767
 ```
 

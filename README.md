@@ -2,8 +2,10 @@
 
 Derivative pricing for the ~~lactose~~ side-effect intolerant.
 
-This is an experimental library exploring the use of free monads to
-implement a contract definition language for equity derivatives.
+Derifree is an experimental library exploring the use of free monads to
+implement a contract definition language for (equity) derivatives.
+
+*This is work in progress!*
 
 ## Examples
 
@@ -18,7 +20,7 @@ import derifree.syntax.*
 val dsl = Dsl[java.time.Instant]
 import dsl.*
 
-val refTime = i"2023-01-01T18:00:00Z"
+val refTime = i"2023-12-27T18:00:00Z"
 val expiry = refTime.plusDays(365)
 val settle = expiry.plusDays(2)
 
@@ -156,7 +158,7 @@ val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
 val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
 val rate = 0.05.rate
 
-val dirNums = Sobol.directionNumbers(5000).toTry.get
+val dirNums = Sobol.directionNumbers(1000).toTry.get
 
 val sim: Simulator[java.time.Instant] =
 Simulator.blackScholes(
@@ -169,6 +171,7 @@ Simulator.blackScholes(
   rate
 )
 
+// the number of Monte Carlo simulations
 val nSims = 32767
 ```
 
@@ -190,34 +193,37 @@ bermudanPut.fairValue(sim, nSims)
 bermudanPut.putProbabilities(sim, nSims)
 // res4: Either[Error, Map[Instant, Double]] = Right(
 //   value = Map(
-//     2023-09-28T18:00:00Z -> 0.12759788811914427,
-//     2023-04-01T18:00:00Z -> 0.06445509201330607,
-//     2023-12-27T18:00:00Z -> 0.08111819818720054,
-//     2023-06-30T18:00:00Z -> 0.11185033722952971
+//     2024-09-22T18:00:00Z -> 0.12759788811914427,
+//     2024-03-26T18:00:00Z -> 0.06445509201330607,
+//     2024-12-21T18:00:00Z -> 0.08111819818720054,
+//     2024-06-24T18:00:00Z -> 0.11185033722952971
 //   )
 // )
 
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
-// res5: Either[Error, PV] = Right(value = 0.11952007594501517)
+// res5: Either[Error, PV] = Left(
+//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
+// )
 
 // should be cheaper than continuous barrier
 worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
-// res6: Either[Error, PV] = Right(value = 0.09498951398431023)
+// res6: Either[Error, PV] = Left(
+//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
+// )
 
 barrierReverseConvertible.fairValue(sim, nSims)
-// res7: Either[Error, PV] = Right(value = 106.09836341818905)
+// res7: Either[Error, PV] = Left(
+//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
+// )
 
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res8: Either[Error, PV] = Right(value = 105.49635516689708)
+// res8: Either[Error, PV] = Left(
+//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
+// )
 
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
-// res9: Either[Error, Map[Instant, Double]] = Right(
-//   value = Map(
-//     2023-09-28T18:00:00Z -> 0.15909298989837337,
-//     2023-04-01T18:00:00Z -> 0.00173955504013184,
-//     2023-12-27T18:00:00Z -> 0.16666158024842068,
-//     2023-06-30T18:00:00Z -> 0.006286812952055422
-//   )
+// res9: Either[Error, Map[Instant, Double]] = Left(
+//   value = derifree.Sobol$Error$$anon$1: max dimensions exceeded
 // )
 ```
