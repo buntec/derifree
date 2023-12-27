@@ -33,18 +33,18 @@ object Simulation:
     def make[T](
         spotObs: Map[String, Set[T]] = Map.empty[String, Set[T]],
         discountObs: Set[T] = Set.empty[T],
-        exerciseDates: Set[T] = Set.empty[T],
-        callDates: Set[T] = Set.empty[T]
-    ): Spec[T] = Spec(spotObs, discountObs, exerciseDates, callDates)
+        putTimes: Set[T] = Set.empty[T],
+        callTimes: Set[T] = Set.empty[T]
+    ): Spec[T] = Spec(spotObs, discountObs, putTimes, callTimes)
 
     def spotObs[T](ticker: String, times: Set[T]) =
       make[T](spotObs = Map(ticker -> times))
 
     def discountObs[T](time: T) = make(discountObs = Set(time))
 
-    def exerciseDate[T](time: T) = make(exerciseDates = Set(time))
+    def putTime[T](time: T) = make(putTimes = Set(time))
 
-    def callDate[T](time: T) = make(callDates = Set(time))
+    def callTime[T](time: T) = make(callTimes = Set(time))
 
     given [T]: Monoid[Spec[T]] = new Monoid[Spec[T]]:
       def empty: Spec[T] = make()

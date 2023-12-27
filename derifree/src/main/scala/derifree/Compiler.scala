@@ -60,7 +60,6 @@ private[derifree] sealed trait Compiler[T]:
           )
         sumE.map(_ / n).map(pv => FairValueResult(pv, Map.empty, Map.empty))
 
-  // returns pv + call/put probabilities
   private def fairValueByLsm[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
@@ -73,13 +72,12 @@ private[derifree] sealed trait Compiler[T]:
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    // println(s"combined spec: $combinedSpec")
     val sumE = simulator(combinedSpec, nSims, nSimsLsm).flatMap: sims =>
       (sims: Iterable[Simulation.Realization[T]]).foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = profile(dsl, sim, rv)
         (estimatorsMapE, factorsE, profileE).mapN((estimators, factors, profile) =>
-          val earlyExerciseDateAndAmount =
+          val earlyExerciseTimeAndAmount =
             (earlyExTimes zip factors).collectFirstSome:
               case (t, fac) =>
                 estimators
@@ -99,7 +97,7 @@ private[derifree] sealed trait Compiler[T]:
                         else None
                       case _ => None
 
-          earlyExerciseDateAndAmount.fold(
+          earlyExerciseTimeAndAmount.fold(
             (
               profile.cashflows.map(_(1)).toList.sum,
               Counter.empty[T, Int],
@@ -152,27 +150,29 @@ private[derifree] sealed trait Compiler[T]:
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.fromPoly(3)
     val spec0 = spec(dsl)(rv)
-    val etDates = (spec0.callTimes union spec0.putTimes).toList.sorted
-    val facRvs = factorRvs(dsl, etDates, simulator.refTime, rv)
+    val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
+    val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
     simulator(combinedSpec, nSims, offset).flatMap: sims0 =>
       val sims = sims0.toList
-      (etDates zip facRvs).reverse
+      (earlyExTimes zip facRvs).reverse
         .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
-          case ((futCFs, estimators), (etDate, factorRv)) =>
+          case ((futCFs, estimators), (earlyExTime, factorRv)) =>
             val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
               for
                 profile <- rv.foldMap(toValue(dsl, sim)).written
                 factors <- eval(dsl, sim, factorRv)
               yield
-                val nextEtDateMaybe = etDates.find(_ > etDate)
+                val nextEarlyExTimeMaybe = earlyExTimes.find(_ > earlyExTime)
                 val contValue = profile.cashflows
-                  .filter((t, _) => t > etDate && nextEtDateMaybe.forall(t < _))
+                  .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
                   .map(_(1))
                   .toIterable
                   .sum + futCf
-                val callAmountMaybe = profile.callAmounts.find((t, _) => t == etDate).map(_(1))
-                val putAmountMaybe = profile.putAmounts.find((t, _) => t == etDate).map(_(1))
+                val callAmountMaybe =
+                  profile.callAmounts.find((t, _) => t == earlyExTime).map(_(1))
+                val putAmountMaybe =
+                  profile.putAmounts.find((t, _) => t == earlyExTime).map(_(1))
                 (factors, contValue, callAmountMaybe, putAmountMaybe)
             val estimatorE = rowsE.flatMap(rows =>
               val filteredRows = rows
@@ -190,7 +190,6 @@ private[derifree] sealed trait Compiler[T]:
                 case Some(estimator) =>
                   rows.map((factors, futCf, callAmount, putAmount) =>
                     val estContValue = estimator(factors.toIndexedSeq)
-                    // println(s"et: $etDate, factors: $factors, est cont value: $estContValue")
                     (callAmount, putAmount) match
                       case (Some(c), None) if c.toDouble < estContValue => c
                       case (None, Some(p)) if p.toDouble > estContValue => p
@@ -203,7 +202,10 @@ private[derifree] sealed trait Compiler[T]:
                   )
             )
             (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
-              (futCfs, estimatorMaybe.fold(estimators)(est => estimators + (etDate -> est)))
+              (
+                futCfs,
+                estimatorMaybe.fold(estimators)(est => estimators + (earlyExTime -> est))
+              )
             )
         }
         .map(_(1))
@@ -320,12 +322,12 @@ private[derifree] object Compiler:
 
             case dsl.Puttable(_, time) =>
               Writer(
-                Simulation.Spec.exerciseDate(time) |+| Simulation.Spec.discountObs(time),
+                Simulation.Spec.putTime(time) |+| Simulation.Spec.discountObs(time),
                 ()
               )
 
             case dsl.Callable(_, time) =>
-              Writer(Simulation.Spec.callDate(time) |+| Simulation.Spec.discountObs(time), ())
+              Writer(Simulation.Spec.callTime(time) |+| Simulation.Spec.discountObs(time), ())
 
       def toValue(
           dsl: Dsl[T],
