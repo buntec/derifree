@@ -27,6 +27,7 @@ object Simulation:
 
   /** Relization of a piecewise diffusion. */
   case class Realization[T](
+      spotObsTimes: Map[String, List[T]],
       timeIndex: Map[T, Int],
       ts: IndexedSeq[YearFraction], // t_i
       deltaTs: IndexedSeq[YearFraction], // t_{i+1} - t_i
