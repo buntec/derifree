@@ -67,7 +67,7 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
-    val estimatorsMapE = toLsmEstimator[A](dsl, simulator, nSimsLsm, 0, rv)
+    val estimatorsMapE = lsmEstimators[A](dsl, simulator, nSimsLsm, 0, rv)
     val spec0 = spec(dsl)(rv)
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
@@ -129,19 +129,23 @@ private[derifree] sealed trait Compiler[T]:
       sim: Simulation.Realization[T],
       rv: dsl.RV[A]
   ): Either[Error, A] =
-    rv.foldMap(toValue(dsl, sim)).value
+    rv.foldMap(toProfileWriter(dsl, sim)).value
 
   private def profile[A](
       dsl: Dsl[T],
       sim: Simulation.Realization[T],
       rv: dsl.RV[A]
   ): Either[Error, Profile[T]] =
-    rv.foldMap(toValue(dsl, sim)).written
+    rv.foldMap(toProfileWriter(dsl, sim)).written
 
   private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
-    rv.foldMap(toSpec(dsl)).written
+    rv.foldMap(toSpecWriter(dsl)).written
 
-  private def toLsmEstimator[A](
+  extension [A](l: List[A])
+    def zipWithNext: List[(A, Option[A])] =
+      l.zip(l.tail.map(_.some) ::: List(none[A]))
+
+  private def lsmEstimators[A](
       dsl: Dsl[T],
       simulator: Simulator[T],
       nSims: Int,
@@ -153,17 +157,15 @@ private[derifree] sealed trait Compiler[T]:
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    simulator(combinedSpec, nSims, offset).flatMap: sims0 =>
-      val sims = sims0.toList
-      (earlyExTimes zip facRvs).reverse
+    simulator(combinedSpec, nSims, offset).flatMap: sims =>
+      (earlyExTimes.zipWithNext zip facRvs).reverse
         .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
-          case ((futCFs, estimators), (earlyExTime, factorRv)) =>
-            val rowsE = (sims zip futCFs).traverse: (sim, futCf) =>
+          case ((futCFs, estimators), ((earlyExTime, nextEarlyExTimeMaybe), factorRv)) =>
+            val rowsE = (sims.toList zip futCFs).traverse: (sim, futCf) =>
               for
-                profile <- rv.foldMap(toValue(dsl, sim)).written
+                profile <- rv.foldMap(toProfileWriter(dsl, sim)).written
                 factors <- eval(dsl, sim, factorRv)
               yield
-                val nextEarlyExTimeMaybe = earlyExTimes.find(_ > earlyExTime)
                 val contValue = profile.cashflows
                   .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
                   .map(_(1))
@@ -210,11 +212,13 @@ private[derifree] sealed trait Compiler[T]:
         }
         .map(_(1))
 
+  // Factors for Longstaff-Schwartz regression
+  // TODO: for stochastic vols or rates we should include vols and discount factors
   private def factorRvs[A](dsl: Dsl[T], times: List[T], refTime: T, rv: dsl.RV[A])(using
       TimeLike[T]
   ): List[dsl.RV[List[Double]]] =
     val spec0 = spec(dsl)(rv)
-    val barriers = rv.foldMap(toBarriers(dsl)).run(0)
+    val barriers = rv.foldMap(toBarrierWriter(dsl)).run(0)
     val udls = spec0.spotObs.keySet.toList.sorted
     times.map: t =>
       import dsl.*
@@ -227,19 +231,19 @@ private[derifree] sealed trait Compiler[T]:
               if (from >= t) then pure(0.0)
               else hitProb(Barrier.Continuous(direction, levels, from, min(t, to), policy))
             case Barrier.Discrete(direction, levels, policy) =>
-              val filteredLevels =
-                levels.map((udl, obs) => udl -> obs.filter((tObs, _) => tObs > t))
-              hitProb(Barrier.Discrete(direction, filteredLevels, policy))
+              val filteredObs =
+                levels.map((udl, obs) => udl -> obs.filter((tObs, _) => tObs <= t))
+              hitProb(Barrier.Discrete(direction, filteredObs, policy))
       yield (spots zip spots0).map(_ / _ - 1) ++ hitProbs
 
-  protected def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
+  protected def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
 
-  protected def toValue(
+  protected def toProfileWriter(
       dsl: Dsl[T],
       sim: Simulation.Realization[T]
   ): dsl.RVA ~> WriterT[Either[Error, _], Profile[T], _]
 
-  protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> (Writer[List[dsl.Barrier], _])
+  protected def toBarrierWriter(dsl: Dsl[T]): dsl.RVA ~> (Writer[List[dsl.Barrier], _])
 
 private[derifree] object Compiler:
 
@@ -286,7 +290,7 @@ private[derifree] object Compiler:
       private def getContBarrierObsTimes(from: T, to: T): Set[T] =
         contBarrierObsTimesCache.getOrElseUpdate((from, to), mkContBarrierObsTimes(from, to))
 
-      protected def toBarriers(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
+      protected def toBarrierWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
         new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[List[dsl.Barrier], A] = fa match
             case dsl.HitProb(barrier) => Writer(List(barrier), 0.5)
@@ -295,7 +299,7 @@ private[derifree] object Compiler:
             case dsl.Callable(_, _)   => Writer.value(())
             case dsl.Puttable(_, _)   => Writer.value(())
 
-      def toSpec(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
+      def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
         new (dsl.RVA ~> Writer[Simulation.Spec[T], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[Simulation.Spec[T], A] = fa match
             case dsl.Spot(ticker, time) =>
@@ -329,7 +333,7 @@ private[derifree] object Compiler:
             case dsl.Callable(_, time) =>
               Writer(Simulation.Spec.callTime(time) |+| Simulation.Spec.discountObs(time), ())
 
-      def toValue(
+      def toProfileWriter(
           dsl: Dsl[T],
           sim: Simulation.Realization[T]
       ): dsl.RVA ~> WriterT[Either[Error, _], Profile[T], _] =
