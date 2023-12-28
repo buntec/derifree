@@ -65,7 +65,7 @@ class AmericanVanillaSuite extends munit.FunSuite:
 
       val europeanPut = for
         s <- spot(udl, expiry)
-        _ <- cashflow(max(strike - s, 0), expiry)
+        _ <- cashflow(max(strike - s, 0.0), expiry)
       yield ()
 
       val americanPut =
@@ -76,9 +76,11 @@ class AmericanVanillaSuite extends munit.FunSuite:
             .tabulate(m)(i => (expiry / m) * i)
             .drop(1)
             .traverse(t =>
-              spot(udl, t).flatMap(s_t => puttable(max(0, strike - s_t).some.filter(_ > 0), t))
+              spot(udl, t).flatMap(s_t =>
+                puttable(max(strike - s_t, 0.0).some.filter(_ > 0), t)
+              )
             )
-          _ <- cashflow(max(strike - s, 0), expiry)
+          _ <- cashflow(max(strike - s, 0.0), expiry)
         yield ()
 
       val euPrice = europeanPut.fairValue(sim, nSims).toTry.get

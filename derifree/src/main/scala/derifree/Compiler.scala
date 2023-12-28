@@ -142,7 +142,7 @@ private[derifree] sealed trait Compiler[T]:
     rv.foldMap(toProfileWriter(dsl, sim)).written.map(_.build)
 
   private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
-    rv.foldMap(toSpecWriter(dsl)).written
+    rv.foldMap(toSpecWriter(dsl)).written.map(_.build)
 
   extension [A](l: List[A])
     def zipWithNext: List[(A, Option[A])] =
@@ -242,7 +242,7 @@ private[derifree] sealed trait Compiler[T]:
               hitProb(Barrier.Discrete(direction, filteredObs, policy))
       yield (spots zip spots0).map(_ / _ - 1) ++ hitProbs
 
-  protected def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _]
+  protected def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[SpecBuilder[T], _]
 
   protected def toProfileWriter(
       dsl: Dsl[T],
@@ -263,18 +263,20 @@ private[derifree] object Compiler:
       cashflows: Chain[(T, PV)],
       callAmounts: Chain[(T, PV)],
       putAmounts: Chain[(T, PV)]
-  ) {
+  ):
     def build: Profile[T] =
-      Profile(cashflows.toList, callAmounts.toIterable.toMap, putAmounts.toIterable.toMap)
-  }
+      Profile(cashflows.toList, callAmounts.iterator.toMap, putAmounts.iterator.toMap)
 
   object ProfileBuilder:
+
     def cashflow[T](time: T, amount: PV) =
-      ProfileBuilder[T](Chain((time, amount)), Chain.empty, Chain.empty)
+      ProfileBuilder[T](Chain.one((time, amount)), Chain.empty, Chain.empty)
+
     def callAmount[T](time: T, amount: PV) =
-      ProfileBuilder[T](Chain.empty, Chain((time, amount)), Chain.empty)
+      ProfileBuilder[T](Chain.empty, Chain.one((time, amount)), Chain.empty)
+
     def putAmount[T](time: T, amount: PV) =
-      ProfileBuilder[T](Chain.empty, Chain.empty, Chain((time, amount)))
+      ProfileBuilder[T](Chain.empty, Chain.empty, Chain.one((time, amount)))
 
   given [T]: Monoid[ProfileBuilder[T]] = new Monoid[ProfileBuilder[T]]:
     def empty: ProfileBuilder[T] = ProfileBuilder[T](Chain.empty, Chain.empty, Chain.empty)
@@ -284,6 +286,51 @@ private[derifree] object Compiler:
         x.callAmounts |+| y.callAmounts,
         x.putAmounts |+| y.putAmounts
       )
+
+  case class SpecBuilder[T](
+      spotObs: Chain[(String, T)],
+      discountObs: Chain[T],
+      putTimes: Chain[T],
+      callTimes: Chain[T]
+  ):
+    def build: Simulation.Spec[T] = Simulation.Spec[T](
+      spotObs.toList.groupBy(_(0)).map((udl, a) => udl -> a.map(_(1)).toSet),
+      discountObs.iterator.toSet,
+      putTimes.iterator.toSet,
+      callTimes.iterator.toSet
+    )
+
+  object SpecBuilder:
+
+    def make[T](
+        spotObs: Chain[(String, T)] = Chain.empty,
+        discountObs: Chain[T] = Chain.empty,
+        putTimes: Chain[T] = Chain.empty,
+        callTimes: Chain[T] = Chain.empty
+    ): SpecBuilder[T] = SpecBuilder(spotObs, discountObs, putTimes, callTimes)
+
+    def spotObs[T](ticker: String, times: Seq[T]) =
+      make[T](spotObs = Chain.fromSeq(times.map(ticker -> _)))
+
+    def spotObs[T](ticker: String, time: T) = make[T](
+      spotObs = Chain.one((ticker -> time))
+    )
+
+    def discountObs[T](time: T) = make(discountObs = Chain.one(time))
+
+    def putTime[T](time: T) = make(putTimes = Chain.one(time))
+
+    def callTime[T](time: T) = make(callTimes = Chain.one(time))
+
+    given [T]: Monoid[SpecBuilder[T]] = new Monoid[SpecBuilder[T]]:
+      def empty: SpecBuilder[T] = make()
+      def combine(x: SpecBuilder[T], y: SpecBuilder[T]): SpecBuilder[T] =
+        make(
+          x.spotObs |+| y.spotObs,
+          x.discountObs |+| y.discountObs,
+          x.putTimes |+| y.putTimes,
+          x.callTimes |+| y.callTimes
+        )
 
   enum Error extends derifree.Error:
     case Generic(override val getMessage: String)
@@ -314,19 +361,19 @@ private[derifree] object Compiler:
             case dsl.Callable(_, _)   => Writer.value(())
             case dsl.Puttable(_, _)   => Writer.value(())
 
-      def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[Simulation.Spec[T], _] =
-        new (dsl.RVA ~> Writer[Simulation.Spec[T], _]):
-          def apply[A](fa: dsl.RVA[A]): Writer[Simulation.Spec[T], A] = fa match
+      def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[SpecBuilder[T], _] =
+        new (dsl.RVA ~> Writer[SpecBuilder[T], _]):
+          def apply[A](fa: dsl.RVA[A]): Writer[SpecBuilder[T], A] = fa match
             case dsl.Spot(ticker, time) =>
-              Writer(Simulation.Spec.spotObs(ticker, Set(time)), 1.0)
+              Writer(SpecBuilder.spotObs(ticker, time), 1.0)
 
             case dsl.Cashflow(amount, time) =>
-              Writer(Simulation.Spec.discountObs(time), PV(1.0))
+              Writer(SpecBuilder.discountObs(time), PV(1.0))
 
             case dsl.HitProb(dsl.Barrier.Discrete(_, levels, _)) =>
               Writer(
                 levels.toList.foldMap((ticker, obs) =>
-                  Simulation.Spec.spotObs(ticker, obs.map(_(0)).toSet)
+                  SpecBuilder.spotObs(ticker, obs.map(_(0)))
                 ),
                 0.5
               )
@@ -334,19 +381,19 @@ private[derifree] object Compiler:
             case dsl.HitProb(dsl.Barrier.Continuous(_, levels, from, to, _)) =>
               Writer(
                 levels.keys.toList.foldMap(ticker =>
-                  Simulation.Spec.spotObs(ticker, getContBarrierObsTimes(from, to))
+                  SpecBuilder.spotObs(ticker, getContBarrierObsTimes(from, to).toSeq)
                 ),
                 0.5
               )
 
             case dsl.Puttable(_, time) =>
               Writer(
-                Simulation.Spec.putTime(time) |+| Simulation.Spec.discountObs(time),
+                SpecBuilder.putTime(time) |+| SpecBuilder.discountObs(time),
                 ()
               )
 
             case dsl.Callable(_, time) =>
-              Writer(Simulation.Spec.callTime(time) |+| Simulation.Spec.discountObs(time), ())
+              Writer(SpecBuilder.callTime(time) |+| SpecBuilder.discountObs(time), ())
 
       def toProfileWriter(
           dsl: Dsl[T],
