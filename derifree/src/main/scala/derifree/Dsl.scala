@@ -82,9 +82,23 @@ trait Dsl[T]:
   def callable(amount: Option[Double], time: T): RV[Unit] =
     liftF[RVA, Unit](Callable(amount, time))
 
-  def min[A: Ordering](as: A*): A = as.min
+  // def min[A: Ordering](as: A*): A = as.min
+  def min[A: Ordering](a1: A, a2: A): A = if Ordering[A].lteq(a1, a2) then a1 else a2
 
-  def max[A: Ordering](as: A*): A = as.max
+  def min[A: Ordering](a1: A, a2: A, a3: A): A =
+    if Ordering[A].lteq(a1, a2) then min(a1, a3) else min(a2, a3)
+
+  def min[A: Ordering](a1: A, a2: A, a3: A, a4: A): A =
+    if Ordering[A].lteq(a1, a2) then min(a1, a3, a4) else min(a2, a3, a4)
+
+  // def max[A: Ordering](as: A*): A = as.max
+  def max[A: Ordering](a1: A, a2: A): A = if Ordering[A].lteq(a2, a1) then a1 else a2
+
+  def max[A: Ordering](a1: A, a2: A, a3: A): A =
+    if Ordering[A].lteq(a2, a1) then max(a1, a3) else max(a2, a3)
+
+  def max[A: Ordering](a1: A, a2: A, a3: A, a4: A): A =
+    if Ordering[A].lteq(a2, a1) then max(a1, a3, a4) else max(a2, a3, a4)
 
   extension [A](rva: RV[A])
     def mean(

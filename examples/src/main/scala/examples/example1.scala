@@ -47,7 +47,7 @@ val bermudanPut = for
   _ <- List(90, 180, 270, 360)
     .map(refTime.plusDays)
     .traverse_(d =>
-      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0).some.filter(_ > 0), d))
+      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0), d))
     )
   s <- spot("AAPL", expiry)
   _ <- cashflow(max(1 - s / s0, 0), settle)
@@ -62,7 +62,7 @@ val europeanUpAndOutCall = for
       Map("AAPL" -> List((expiry, 1.2 * s0)))
     )
   )
-  _ <- cashflow(p * max(s / s0 - 1, 0), settle)
+  _ <- cashflow(p * max(s / s0 - 1, 0.0), settle)
 yield ()
 
 val worstOfContinuousDownAndInPut = for
@@ -80,7 +80,7 @@ val worstOfContinuousDownAndInPut = for
       to = expiry
     )
   )
-  _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
 val worstOfEuropeanDownAndInPut = for
@@ -100,7 +100,7 @@ val worstOfEuropeanDownAndInPut = for
       )
     )
   )
-  _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
 val barrierReverseConvertible =
@@ -126,7 +126,7 @@ val barrierReverseConvertible =
       )
     )
     _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
 val callableBarrierReverseConvertible =
@@ -154,7 +154,7 @@ val callableBarrierReverseConvertible =
     )
     _ <- callTimes.traverse_(t => callable(100.0.some, t))
     _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
 @main def run: Unit =

@@ -42,7 +42,7 @@ val worstOfDip = for
       Barrier.Policy.Or
     )
   )
-  _ <- cashflow(pHit * max(0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
+  _ <- cashflow(pHit * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
 yield ()
 
 @main def run: Unit =
