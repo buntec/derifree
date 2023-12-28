@@ -26,7 +26,9 @@ trait TimeLike[T] extends Order[T]:
 
   def dailyStepsBetween(start: T, stop: T): List[T]
 
-  def addDays(t: T, n: Int): T
+  def addDays(t: T, days: Int): T
+
+  def addSeconds(t: T, seconds: Int): T
 
 object TimeLike:
 
@@ -48,6 +50,9 @@ object TimeLike:
       List.unfold(start + dt)(s => if s < stop then Some((s, s + dt)) else None)
 
     def addDays(t: YearFraction, n: Int): YearFraction = t + YearFraction.oneDay * n
+
+    def addSeconds(t: YearFraction, seconds: Int): YearFraction =
+      t + YearFraction.oneSecond * seconds
 
   given TimeLike[java.time.Instant] =
     new TimeLike[java.time.Instant]:
@@ -72,6 +77,9 @@ object TimeLike:
 
       def addDays(t: Instant, n: Int): Instant = t.plus(java.time.Duration.ofDays(n))
 
+      def addSeconds(t: Instant, seconds: Int): Instant =
+        t.plus(java.time.Duration.ofSeconds(seconds))
+
 trait TimeLikeSyntax:
 
   given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
@@ -80,3 +88,4 @@ trait TimeLikeSyntax:
     def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
     def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
     def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
+    def plusSeconds(n: Int): T = TimeLike[T].addSeconds(t, n)

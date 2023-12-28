@@ -506,7 +506,11 @@ private[derifree] object Compiler:
                     contBarrierObsIndicesCache.getOrElseUpdate(
                       (from, to),
                       Either.fromOption(
-                        mkContBarrierObsTimes(from, to).toList
+                        sim.spotObsTimes.values
+                          .map(_.filter(t => t >= from && t <= to))
+                          .flatten
+                          .toSet
+                          .toList
                           .traverse(t => sim.timeIndex.get(t))
                           .map(_.toArray.sorted),
                         Error.Generic("missing spot time index")

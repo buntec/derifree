@@ -18,6 +18,7 @@ package derifree
 
 import cats.kernel.Order
 import cats.syntax.all.*
+import derifree.syntax.*
 import derifree.Simulation.Realization
 import derifree.Simulation.Spec
 import org.apache.commons.math3.util.{FastMath => math}
@@ -49,6 +50,26 @@ object Simulator:
       correlations: Map[(String, String), Double],
       rate: Rate
   ): Simulator[T] =
+    val discountCurve = YieldCurve.fromConstantRate(rate, refTime0)
+    blackScholes(
+      timeGridFactory,
+      normalGenFactory,
+      refTime0,
+      spots.map((udl, s0) => udl -> Forward.buehler(s0, Nil, discountCurve, YieldCurve.zero)),
+      vols,
+      correlations,
+      discountCurve
+    )
+
+  def blackScholes[T: TimeLike](
+      timeGridFactory: TimeGrid.Factory,
+      normalGenFactory: NormalGen.Factory,
+      refTime0: T,
+      forwards: Map[String, Forward[T]],
+      vols: Map[String, Vol],
+      correlations: Map[(String, String), Double],
+      discountCurve: YieldCurve[T]
+  ): Simulator[T] =
     new Simulator[T]:
 
       def refTime: T = refTime0
@@ -60,8 +81,17 @@ object Simulator:
       ): Either[derifree.Error, View[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
         val nUdl = udls.length
-        val obsTimes = (spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
-          .sorted(Order[T].toOrdering)
+        val divTimes = forwards.values.map(_.dividends.map(_.exDiv)).toList.flatten.toSet
+        val obsTimes =
+          (divTimes union spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
+            .sorted(Order[T].toOrdering)
+
+        val spotObsTimes = udls
+          .map(udl =>
+            udl -> (spec.spotObs(udl) union forwards(udl).dividends.map(_.exDiv).toSet).toList
+              .sorted(Order[T].toOrdering)
+          )
+          .toMap
 
         val yearFractions = obsTimes.map(t => TimeLike[T].yearFractionBetween(refTime, t))
         val timeGrid = timeGridFactory(yearFractions.toSet)
@@ -73,14 +103,12 @@ object Simulator:
         val udlIndices = udls.indices.toArray
 
         val ts = timeGrid.yearFractions
-        val tsArr = ts.toArray.asInstanceOf[Array[Double]]
         val dts = timeGrid.deltas
         val dtsArr = dts.toArray.asInstanceOf[Array[Double]]
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
-        val spots0 = udls.map(udl => spots(udl)).toArray
+        val spots0 = udls.map(udl => forwards(udl).spot).toArray
         val vols0 = udls.map(udl => vols(udl)).toArray
-        val r = rate.toDouble
 
         (
           normalGenFactory(nUdl, nt - 1),
@@ -94,23 +122,45 @@ object Simulator:
           val logspots = Array.ofDim[Double](nUdl, nt)
           val spots = Array.ofDim[Double](nUdl, nt)
 
+          val logspotsPure = Array.ofDim[Double](nUdl, nt)
+
           val spotObsIndices =
-            udls.map(udl => spec.spotObs(udl).toList.map(timeIndex).sorted.toArray).toArray
+            udls.map(udl => spotObsTimes(udl).map(timeIndex).toArray).toArray
+
+          val fwds =
+            udls.map(udl => spotObsTimes(udl).map(t => forwards(udl)(t)).toArray).toArray
+
+          val fwdsLeft =
+            udls
+              .map(udl => spotObsTimes(udl).map(t => forwards(udl)(t.plusSeconds(-1))).toArray)
+              .toArray
+
+          val divFloors =
+            udls
+              .map(udl => spotObsTimes(udl).map(t => forwards(udl).dividendFloor(t)).toArray)
+              .toArray
+
+          val divFloorsLeft =
+            udls
+              .map(udl =>
+                spotObsTimes(udl)
+                  .map(t => forwards(udl).dividendFloor(t.plusSeconds(-1)))
+                  .toArray
+              )
+              .toArray
 
           var i = 0
           while (i < nUdl) {
-            logspots(i)(0) = math.log(spots0(i))
             spots(i)(0) = spots0(i)
+            logspots(i)(0) = math.log(spots0(i))
             vols(i)(0) = vols0(i).toDouble
+            logspotsPure(i)(0) = 0.0
             i += 1
           }
 
-          discounts(0) = 1.0
-          var j = 1
-          while (j < nt) {
-            discounts(j) = math.exp(-r * tsArr(j))
-            j += 1
-          }
+          spec.discountObs.foreach: t =>
+            val j = timeIndex(t)
+            discounts(j) = discountCurve.discountFactor(t)
           val discounts0 = ArraySeq.unsafeWrapArray(discounts)
 
           val z = Array.ofDim[Double](nUdl)
@@ -137,8 +187,8 @@ object Simulator:
                 while (i < nUdl) {
                   val v = vols(i)(j)
                   vols(i)(j + 1) = v
-                  logspots(i)(j + 1) =
-                    logspots(i)(j) + (r - 0.5 * v * v) * dtsArr(j) + v * sdts(j) * z(i)
+                  logspotsPure(i)(j + 1) =
+                    logspotsPure(i)(j) - 0.5 * v * v * dtsArr(j) + v * sdts(j) * z(i)
                   i += 1
                 }
 
@@ -147,10 +197,19 @@ object Simulator:
 
               udlIndices.foreach: i =>
                 val idxs = spotObsIndices(i)
+                val f = fwds(i)
+                val fLeft = fwdsLeft(i)
+                val d = divFloors(i)
+                val dLeft = divFloorsLeft(i)
                 var j = 0
                 while (j < idxs.length) {
                   val j0 = idxs(j)
-                  spots(i)(j0) = math.exp(logspots(i)(j0))
+                  val spotPure = math.exp(logspotsPure(i)(j0))
+                  val spot = (f(j) - d(j)) * spotPure + d(j)
+                  val spotLeft = (fLeft(j) - dLeft(j)) * spotPure + dLeft(j)
+                  spots(i)(j0) = spot
+                  jumps(i)(j0) = spot - spotLeft
+                  logspots(i)(j0) = math.log(spots(i)(j0))
                   j += 1
                 }
 
@@ -171,6 +230,7 @@ object Simulator:
               Some(
                 Simulation
                   .Realization[T](
+                    spotObsTimes,
                     timeIndex,
                     ts,
                     dts,
