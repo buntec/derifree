@@ -30,7 +30,7 @@ trait Forward[T]:
 
 object Forward:
 
-  def buehler[T: TimeLike](
+  def apply[T: TimeLike](
       spot0: Double,
       divs: List[Dividend[T]],
       discount: YieldCurve[T],

@@ -40,6 +40,8 @@ object Simulator:
 
   enum Error extends derifree.Error:
     case MissingTimeIndex
+    case MissingForward
+    case MissingVol
 
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
@@ -50,12 +52,12 @@ object Simulator:
       correlations: Map[(String, String), Double],
       rate: Rate
   ): Simulator[T] =
-    val discountCurve = YieldCurve.fromConstantRate(rate, refTime0)
+    val discountCurve = YieldCurve.fromContinuouslyCompoundedRate(rate, refTime0)
     blackScholes(
       timeGridFactory,
       normalGenFactory,
       refTime0,
-      spots.map((udl, s0) => udl -> Forward.buehler(s0, Nil, discountCurve, YieldCurve.zero)),
+      spots.map((udl, s0) => udl -> Forward(s0, Nil, discountCurve, YieldCurve.zero)),
       vols,
       correlations,
       discountCurve
@@ -86,12 +88,16 @@ object Simulator:
           (divTimes union spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
             .sorted(Order[T].toOrdering)
 
-        val spotObsTimes = udls
-          .map(udl =>
-            udl -> (spec.spotObs(udl) union forwards(udl).dividends.map(_.exDiv).toSet).toList
-              .sorted(Order[T].toOrdering)
+        val spotObsTimesMaybe = udls
+          .traverse(udl =>
+            (spec.spotObs.get(udl), forwards.get(udl))
+              .mapN { (spotObs, forward) =>
+                (spotObs union forward.dividends.map(_.exDiv).toSet).toList
+                  .sorted(Order[T].toOrdering)
+              }
+              .tupleLeft(udl)
           )
-          .toMap
+          .map(_.toMap)
 
         val yearFractions = obsTimes.map(t => TimeLike[T].yearFractionBetween(refTime, t))
         val timeGrid = timeGridFactory(yearFractions.toSet)
@@ -107,14 +113,16 @@ object Simulator:
         val dtsArr = dts.toArray.asInstanceOf[Array[Double]]
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
-        val spots0 = udls.map(udl => forwards(udl).spot).toArray
-        val vols0 = udls.map(udl => vols(udl)).toArray
+
+        val volsMaybe = udls.traverse(udl => vols.get(udl))
 
         (
           normalGenFactory(nUdl, nt - 1),
           utils.cholesky(correlations, udls),
-          Either.fromOption(timeIndexMaybe, Error.MissingTimeIndex)
-        ).mapN: (normalGen, w, timeIndex) =>
+          Either.fromOption(timeIndexMaybe, Error.MissingTimeIndex),
+          Either.fromOption(spotObsTimesMaybe, Error.MissingForward),
+          Either.fromOption(volsMaybe, Error.MissingVol)
+        ).mapN: (normalGen, w, timeIndex, spotObsTimes, vols0) =>
 
           val jumps = Array.ofDim[Double](nUdl, nt)
           val vols = Array.ofDim[Double](nUdl, nt)
@@ -154,8 +162,6 @@ object Simulator:
 
           var i = 0
           while (i < nUdl) {
-            spots(i)(0) = spots0(i)
-            logspots(i)(0) = math.log(spots0(i))
             vols(i)(0) = vols0(i).toDouble
             logspotsPure(i)(0) = 0.0
             i += 1
