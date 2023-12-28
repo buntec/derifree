@@ -157,60 +157,66 @@ private[derifree] sealed trait Compiler[T]:
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    simulator(combinedSpec, nSims, offset).flatMap: sims =>
-      (earlyExTimes.zipWithNext zip facRvs).reverse
-        .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
-          case ((futCFs, estimators), ((earlyExTime, nextEarlyExTimeMaybe), factorRv)) =>
-            val rowsE = (sims.toList zip futCFs).traverse: (sim, futCf) =>
-              for
-                profile <- rv.foldMap(toProfileWriter(dsl, sim)).written
-                factors <- eval(dsl, sim, factorRv)
-              yield
-                val contValue = profile.cashflows
-                  .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
-                  .map(_(1))
-                  .toIterable
-                  .sum + futCf
-                val callAmountMaybe =
-                  profile.callAmounts.find((t, _) => t == earlyExTime).map(_(1))
-                val putAmountMaybe =
-                  profile.putAmounts.find((t, _) => t == earlyExTime).map(_(1))
-                (factors, contValue, callAmountMaybe, putAmountMaybe)
-            val estimatorE = rowsE.flatMap(rows =>
-              val filteredRows = rows
-                .filter((_, _, callAmountMaybe, putAmountMaybe) =>
-                  callAmountMaybe.isDefined || putAmountMaybe.isDefined
-                )
-                .map((factors, contValue, _, _) => (factors, contValue.toDouble))
-              if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
-              then lsm0.continuationValueEstimator(filteredRows).map(_.some)
-              else Right(None) // too few relevant paths for least-squares
-            )
-            val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>
-              estimatorMaybe match
-                case None => rows.map((_, futCf, _, _) => futCf)
-                case Some(estimator) =>
-                  rows.map((factors, futCf, callAmount, putAmount) =>
-                    val estContValue = estimator(factors.toIndexedSeq)
-                    (callAmount, putAmount) match
-                      case (Some(c), None) if c.toDouble < estContValue => c
-                      case (None, Some(p)) if p.toDouble > estContValue => p
-                      case (Some(c), Some(p))                           =>
-                        // caller takes precedence
-                        if c.toDouble < estContValue then c
-                        else if p.toDouble > estContValue then p
-                        else futCf
-                      case _ => futCf
+    simulator(combinedSpec, nSims, offset)
+      .flatMap { sims =>
+        val sims0 = sims.toList
+        val profilesE = sims0.traverse(sim => profile(dsl, sim, rv))
+        profilesE.tupleLeft(sims0)
+      }
+      .flatMap { case (sims, profiles) =>
+        (earlyExTimes.zipWithNext zip facRvs).reverse
+          .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
+            case ((futCFs, estimators), ((earlyExTime, nextEarlyExTimeMaybe), factorRv)) =>
+              val rowsE = (sims zip profiles zip futCFs).traverse {
+                case ((sim, profile), futCf) =>
+                  eval(dsl, sim, factorRv).map: factors =>
+                    val contValue = profile.cashflows
+                      .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
+                      .map(_(1))
+                      .toIterable
+                      .sum + futCf
+                    val callAmountMaybe =
+                      profile.callAmounts.find((t, _) => t == earlyExTime).map(_(1))
+                    val putAmountMaybe =
+                      profile.putAmounts.find((t, _) => t == earlyExTime).map(_(1))
+                    (factors, contValue, callAmountMaybe, putAmountMaybe)
+              }
+              val estimatorE = rowsE.flatMap(rows =>
+                val filteredRows = rows
+                  .filter((_, _, callAmountMaybe, putAmountMaybe) =>
+                    callAmountMaybe.isDefined || putAmountMaybe.isDefined
                   )
-            )
-            (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
-              (
-                futCfs,
-                estimatorMaybe.fold(estimators)(est => estimators + (earlyExTime -> est))
+                  .map((factors, contValue, _, _) => (factors, contValue.toDouble))
+                if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
+                then lsm0.continuationValueEstimator(filteredRows).map(_.some)
+                else Right(None) // too few relevant paths for least-squares
               )
-            )
-        }
-        .map(_(1))
+              val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>
+                estimatorMaybe match
+                  case None => rows.map((_, futCf, _, _) => futCf)
+                  case Some(estimator) =>
+                    rows.map((factors, futCf, callAmount, putAmount) =>
+                      val estContValue = estimator(factors.toIndexedSeq)
+                      (callAmount, putAmount) match
+                        case (Some(c), None) if c.toDouble < estContValue => c
+                        case (None, Some(p)) if p.toDouble > estContValue => p
+                        case (Some(c), Some(p))                           =>
+                          // caller takes precedence
+                          if c.toDouble < estContValue then c
+                          else if p.toDouble > estContValue then p
+                          else futCf
+                        case _ => futCf
+                    )
+              )
+              (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
+                (
+                  futCfs,
+                  estimatorMaybe.fold(estimators)(est => estimators + (earlyExTime -> est))
+                )
+              )
+          }
+          .map(_(1))
+      }
 
   // Factors for Longstaff-Schwartz regression
   // TODO: for stochastic vols or rates we should include vols and discount factors
