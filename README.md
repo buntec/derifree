@@ -27,7 +27,7 @@ val settle = expiry.plusDays(2)
 val europeanCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(s / s0 - 1, 0), settle)
+  _ <- cashflow(max(s / s0 - 1, 0.0), settle)
 yield ()
 
 val europeanUpAndOutCall = for
@@ -39,13 +39,13 @@ val europeanUpAndOutCall = for
       Map("AAPL" -> List((expiry, 1.5 * s0)))
     )
   )
-  _ <- cashflow(p * max(s / s0 - 1, 0), settle)
+  _ <- cashflow(p * max(s / s0 - 1, 0.0), settle)
 yield ()
 
 val europeanPut = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0), settle)
+  _ <- cashflow(max(1 - s / s0, 0.0), settle)
 yield ()
 
 val bermudanPut = for
@@ -53,10 +53,10 @@ val bermudanPut = for
   _ <- List(90, 180, 270, 360)
     .map(refTime.plusDays)
     .traverse_(d =>
-      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0).some.filter(_ > 0), d))
+      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0.0), d))
     )
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0), settle)
+  _ <- cashflow(max(1 - s / s0, 0.0), settle)
 yield ()
 
 val worstOfContinuousDownAndInPut = for
@@ -74,7 +74,7 @@ val worstOfContinuousDownAndInPut = for
       to = expiry
     )
   )
-  _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
 val worstOfEuropeanDownAndInPut = for
@@ -94,7 +94,7 @@ val worstOfEuropeanDownAndInPut = for
       )
     )
   )
-  _ <- cashflow(p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
 yield ()
 
 val barrierReverseConvertible =
@@ -120,7 +120,7 @@ val barrierReverseConvertible =
       )
     )
     _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
 val callableBarrierReverseConvertible =
@@ -148,7 +148,7 @@ val callableBarrierReverseConvertible =
     )
     _ <- callTimes.traverse_(t => callable(100.0.some, t))
     _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
   yield ()
 
 // let's price using a simple Black-Scholes model
@@ -177,18 +177,18 @@ val nSims = 32767
 
 ```scala
 europeanCall.fairValue(sim, nSims)
-// res0: Either[Error, PV] = Right(value = 0.11573966972404859)
+// res0: Either[Error, PV] = Right(value = 0.11573966972403645)
 
 // should be cheaper than plain European call
 europeanUpAndOutCall.fairValue(sim, nSims)
-// res1: Either[Error, PV] = Right(value = 0.08550169593262259)
+// res1: Either[Error, PV] = Right(value = 0.08550169593261212)
 
 europeanPut.fairValue(sim, nSims)
-// res2: Either[Error, PV] = Right(value = 0.0669997396370262)
+// res2: Either[Error, PV] = Right(value = 0.06699973963703337)
 
 // should be more expensive than European put
 bermudanPut.fairValue(sim, nSims)
-// res3: Either[Error, PV] = Right(value = 0.07099091173390065)
+// res3: Either[Error, PV] = Right(value = 0.07099091173390634)
 
 // what are the probabilities of early exercise?
 bermudanPut.putProbabilities(sim, nSims)
@@ -202,18 +202,18 @@ bermudanPut.putProbabilities(sim, nSims)
 // )
 
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
-// res5: Either[Error, PV] = Right(value = 0.11952007594501517)
+// res5: Either[Error, PV] = Right(value = 0.11952007594500867)
 
 // should be cheaper than continuous barrier
 worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
-// res6: Either[Error, PV] = Right(value = 0.09498951398431023)
+// res6: Either[Error, PV] = Right(value = 0.09498951398431003)
 
 barrierReverseConvertible.fairValue(sim, nSims)
-// res7: Either[Error, PV] = Right(value = 106.09836341818905)
+// res7: Either[Error, PV] = Right(value = 106.09836341818976)
 
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res8: Either[Error, PV] = Right(value = 105.49635516689708)
+// res8: Either[Error, PV] = Right(value = 105.49635516689791)
 
 // what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
