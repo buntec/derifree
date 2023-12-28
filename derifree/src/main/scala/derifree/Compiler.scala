@@ -340,17 +340,11 @@ private[derifree] object Compiler:
   def apply[T: TimeLike]: Compiler[T] =
     new Compiler[T]:
 
-      private val contBarrierObsTimesCache =
-        scala.collection.mutable.HashMap.empty[(T, T), Set[T]]
-
       private val contBarrierObsIndicesCache =
         scala.collection.mutable.HashMap.empty[(T, T), Either[Error, Array[Int]]]
 
       private def mkContBarrierObsTimes(from: T, to: T): Set[T] =
         Set(from, to) |+| TimeLike[T].dailyStepsBetween(from, to).toSet
-
-      private def getContBarrierObsTimes(from: T, to: T): Set[T] =
-        contBarrierObsTimesCache.getOrElseUpdate((from, to), mkContBarrierObsTimes(from, to))
 
       protected def toBarrierWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
         new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
@@ -381,7 +375,7 @@ private[derifree] object Compiler:
             case dsl.HitProb(dsl.Barrier.Continuous(_, levels, from, to, _)) =>
               Writer(
                 levels.keys.toList.foldMap(ticker =>
-                  SpecBuilder.spotObs(ticker, getContBarrierObsTimes(from, to).toSeq)
+                  SpecBuilder.spotObs(ticker, mkContBarrierObsTimes(from, to).toSeq)
                 ),
                 0.5
               )

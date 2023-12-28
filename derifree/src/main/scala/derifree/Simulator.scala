@@ -127,6 +127,9 @@ object Simulator:
           val spotObsIndices =
             udls.map(udl => spotObsTimes(udl).map(timeIndex).toArray).toArray
 
+          val isDivTime =
+            udls.map(udl => spotObsTimes(udl).map(t => divTimes.contains(t)).toArray).toArray
+
           val fwds =
             udls.map(udl => spotObsTimes(udl).map(t => forwards(udl)(t)).toArray).toArray
 
@@ -196,19 +199,22 @@ object Simulator:
               }
 
               udlIndices.foreach: i =>
-                val idxs = spotObsIndices(i)
                 val f = fwds(i)
                 val fLeft = fwdsLeft(i)
                 val d = divFloors(i)
                 val dLeft = divFloorsLeft(i)
                 var j = 0
-                while (j < idxs.length) {
-                  val j0 = idxs(j)
+                while (j < spotObsIndices(i).length) {
+                  val j0 = spotObsIndices(i)(j)
                   val spotPure = math.exp(logspotsPure(i)(j0))
                   val spot = (f(j) - d(j)) * spotPure + d(j)
-                  val spotLeft = (fLeft(j) - dLeft(j)) * spotPure + dLeft(j)
                   spots(i)(j0) = spot
-                  jumps(i)(j0) = spot - spotLeft
+                  if (isDivTime(i)(j)) {
+                    val spotLeft = (fLeft(j) - dLeft(j)) * spotPure + dLeft(j)
+                    jumps(i)(j0) = spot - spotLeft
+                  } else {
+                    jumps(i)(j0) = 0.0
+                  }
                   logspots(i)(j0) = math.log(spots(i)(j0))
                   j += 1
                 }
