@@ -16,10 +16,11 @@
 
 package derifree
 
-import cats.syntax.all.*
-import cats.data.State
-import scala.collection.View
 import cats.Monad
+import cats.data.State
+import cats.syntax.all.*
+
+import scala.collection.View
 
 private val stateMonadInstance: Monad[State[Gen.S, _]] = Monad[State[Gen.S, _]]
 

@@ -18,9 +18,9 @@ package derifree
 
 import cats.kernel.Order
 import cats.syntax.all.*
-import derifree.syntax.*
 import derifree.Simulation.Realization
 import derifree.Simulation.Spec
+import derifree.syntax.*
 import org.apache.commons.math3.util.{FastMath => math}
 
 import scala.collection.View

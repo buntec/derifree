@@ -54,10 +54,10 @@ import cats.data.{State => cState}
 import cats.syntax.all.*
 
 import java.io.FileNotFoundException
+import scala.collection.View
 import scala.collection.immutable.ArraySeq
 
 import Sobol.*
-import scala.collection.View
 
 /*
  * https://web.maths.unsw.edu.au/~fkuo/sobol/

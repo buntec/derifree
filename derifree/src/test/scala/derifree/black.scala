@@ -16,9 +16,9 @@
 
 package derifree
 
-import cats.syntax.all.*
 import cats.Show
 import cats.derived.*
+import cats.syntax.all.*
 
 class BlackSuite extends munit.FunSuite:
 

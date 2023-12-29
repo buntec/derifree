@@ -18,8 +18,8 @@ package derifree
 
 import cats.data.{State => cState}
 
-import scala.collection.immutable.ArraySeq
 import scala.collection.View
+import scala.collection.immutable.ArraySeq
 
 sealed trait NormalGen:
 
