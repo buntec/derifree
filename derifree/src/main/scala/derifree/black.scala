@@ -25,6 +25,12 @@ import org.apache.commons.math3.util.{FastMath => math}
 enum OptionType:
   case Call, Put
 
+object OptionType:
+  extension (ot: OptionType)
+    def sign: Int = ot match
+      case OptionType.Call => 1
+      case OptionType.Put  => -1
+
 enum Error extends derifree.Error:
   case PriceExceedsUpperBound
   case PriceBelowIntrinsic
