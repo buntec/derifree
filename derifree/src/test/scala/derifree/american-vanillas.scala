@@ -89,9 +89,8 @@ class AmericanVanillaSuite extends munit.FunSuite:
       val hint =
         s"spot=$s0, euPrice=$euPrice, euPriceRef=$euPriceRef, amPrice=$amPrice, amPriceRef=$amPriceRef"
 
-      println(hint)
-
-      assert(euPrice.toDouble <= amPrice.toDouble + absTol)
-      assert(math.abs(euPrice.toDouble - euPriceRef) < absTol)
-      assert(math.abs(amPrice.toDouble - amPriceRef) < absTol)
+      // println(hint)
+      assert(euPrice.toDouble <= amPrice.toDouble + absTol, hint)
+      assert(math.abs(euPrice.toDouble - euPriceRef) < absTol, hint)
+      assert(math.abs(amPrice.toDouble - amPriceRef) < absTol, hint)
     }

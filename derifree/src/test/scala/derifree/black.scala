@@ -26,7 +26,7 @@ class BlackSuite extends munit.FunSuite:
       oType: black.OptionType,
       forward: Double,
       strike: Double,
-      val vol: Double,
+      vol: Double,
       df: Double,
       timeToExpiry: Double
   ) derives Show
@@ -74,5 +74,5 @@ class BlackSuite extends munit.FunSuite:
             )
             .toTry
             .get
-          println(show"i=$i, case=$c, vol=${c.vol}, implied vol= $ivol")
-          assert(math.abs(ivol - c.vol) <= tol)
+          val clue = show"i=$i, case=$c, vol=${c.vol}, implied vol= $ivol"
+          assertEqualsDouble(ivol, c.vol, tol, clue)

@@ -80,5 +80,5 @@ class VanillaSuite extends munit.FunSuite:
 
       val price = europeanVanilla.fairValue(sim, nSims).toTry.get
 
-      println(s"price=$price, ref=$refPrice, hint=$hint")
-      assertEqualsDouble(price.toDouble, refPrice, 1e-4)
+      // println(s"price=$price, ref=$refPrice, hint=$hint")
+      assertEqualsDouble(price.toDouble, refPrice, 1e-4, hint)

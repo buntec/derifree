@@ -16,23 +16,23 @@
 
 package derifree
 
-import cats.data.{State => cState}
+import cats.data.State
 
 import scala.collection.View
 import scala.collection.immutable.ArraySeq
 
 sealed trait NormalGen:
 
-  type State
+  type S // state of the underlying rng
 
-  def init(offset: Int): State
+  def init(offset: Int): S
 
   def dimensions: (Int, Int)
 
   /** Nested `IndexedSeq` dimensions equal `dimensions`. */
-  def next: cState[State, IndexedSeq[IndexedSeq[Double]]]
+  def next: State[S, IndexedSeq[IndexedSeq[Double]]]
 
-  def skipTo(pos: Int): cState[State, Unit]
+  def skipTo(pos: Int): State[S, Unit]
 
   def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]] =
     View.Unfold(init(offset)): s =>
@@ -58,15 +58,15 @@ object NormalGen:
     Sobol(m * n, dirs).map: sobol =>
       val bbt = BrownianBridge.transform(m * n)
       new NormalGen:
-        type State = Sobol.State
+        type S = Sobol.S
 
         def dimensions: (Int, Int) = (m, n)
 
-        def init(offset: Int): State = sobol.initialState(offset)
+        def init(offset: Int): S = sobol.initialState(offset)
 
-        def skipTo(pos: Int): cState[State, Unit] = sobol.skipTo(pos)
+        def skipTo(pos: Int): State[S, Unit] = sobol.skipTo(pos)
 
-        def next: cState[State, IndexedSeq[IndexedSeq[Double]]] =
+        def next: State[S, IndexedSeq[IndexedSeq[Double]]] =
           sobol.next.map: sobolNumbers =>
             val zs0 = sobolNumbers.toArray
             var i = 0

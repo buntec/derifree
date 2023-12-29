@@ -50,7 +50,7 @@
 
 package derifree
 
-import cats.data.{State => cState}
+import cats.data.State
 import cats.syntax.all.*
 
 import java.io.FileNotFoundException
@@ -64,11 +64,11 @@ import Sobol.*
  */
 sealed trait Sobol:
 
-  def initialState(offset: Int): State
+  def initialState(offset: Int): S
 
-  def next: cState[State, IndexedSeq[Double]]
+  def next: State[S, IndexedSeq[Double]]
 
-  def skipTo(pos: Int): cState[State, Unit]
+  def skipTo(pos: Int): State[S, Unit]
 
   def view(offset: Int): View[IndexedSeq[Double]] =
     View.Unfold(initialState(offset)): s =>
@@ -92,7 +92,7 @@ object Sobol:
       def get: IndexedSeq[IndexedSeq[Int]] = dirs
       def maxDim: Int = dirs.length
 
-  case class State(pos: Int, x: IndexedSeq[Int])
+  case class S(pos: Int, x: IndexedSeq[Int])
 
   def directionNumbers(maxDim: Int): Either[Error, DirectionNumbers] =
     directionNumbersFromResource(maxDim, "new-joe-kuo-6.21201")
@@ -104,11 +104,11 @@ object Sobol:
         new Sobol:
 
           // skip first dimension: (0,...,0)
-          def initialState(offset: Int): State =
-            skipTo(offset + 1).runS(State(0, Array.ofDim[Int](dim).toIndexedSeq)).value
+          def initialState(offset: Int): S =
+            skipTo(offset + 1).runS(S(0, Array.ofDim[Int](dim).toIndexedSeq)).value
 
-          def next: cState[State, IndexedSeq[Double]] =
-            cState[State, IndexedSeq[Double]]: state =>
+          def next: State[S, IndexedSeq[Double]] =
+            State[S, IndexedSeq[Double]]: state =>
               val out = Array.ofDim[Double](dim)
               if (state.pos == 0) then
                 var i = 0
@@ -137,7 +137,7 @@ object Sobol:
                   ArraySeq.unsafeWrapArray(out)
                 )
 
-          def skipTo(pos: Int): cState[State, Unit] =
+          def skipTo(pos: Int): State[S, Unit] =
             require(
               pos >= 0 && pos < MAXPOS,
               s"Position must be between 0 (inclusive) and 2^${BITS} - 1"
@@ -167,7 +167,7 @@ object Sobol:
                 j += 1
               }
             }
-            cState.set(State(pos, ArraySeq.unsafeWrapArray(x)))
+            State.set(S(pos, ArraySeq.unsafeWrapArray(x)))
       )
 
   private val BITS: Int = 31
