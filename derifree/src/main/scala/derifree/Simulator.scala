@@ -30,7 +30,6 @@ trait Simulator[T]:
 
   def apply(
       spec: Simulation.Spec[T],
-      nSims: Int,
       offset: Int
   ): Either[derifree.Error, View[Simulation.Realization[T]]]
 
@@ -78,7 +77,6 @@ object Simulator:
 
       def apply(
           spec: Spec[T],
-          nSims: Int,
           offset: Int
       ): Either[derifree.Error, View[Realization[T]]] =
         val udls = spec.spotObs.keySet.toList
@@ -174,10 +172,9 @@ object Simulator:
 
           val z = Array.ofDim[Double](nUdl)
 
-          View.unfold((0, normalGen.init(offset))): (count, normalState) =>
-            if count < nSims then
-              val (nextNormalState, z0) = normalGen.next.run(normalState).value
-
+          normalGen
+            .view(offset)
+            .map: z0 =>
               var j = 0
               while (j < nt - 1) {
 
@@ -239,19 +236,15 @@ object Simulator:
                   ArraySeq.unsafeWrapArray(vols(i).clone).asInstanceOf[IndexedSeq[Vol]]
                 )
 
-              Some(
-                Simulation
-                  .Realization[T](
-                    spotObsTimes,
-                    timeIndex,
-                    ts,
-                    dts,
-                    spotsMB.result,
-                    logspotsMB.result,
-                    jumpsMB.result,
-                    volsMB.result,
-                    discounts0
-                  ),
-                (count + 1, nextNormalState)
-              )
-            else None
+              Simulation
+                .Realization[T](
+                  spotObsTimes,
+                  timeIndex,
+                  ts,
+                  dts,
+                  spotsMB.result,
+                  logspotsMB.result,
+                  jumpsMB.result,
+                  volsMB.result,
+                  discounts0
+                )

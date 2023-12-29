@@ -21,19 +21,16 @@ import org.apache.commons.math3.random.SobolSequenceGenerator
 class SobolSuite extends munit.FunSuite:
 
   test("numbers match Apache Commons Math implementation"):
-    for (dim <- List(5, 10, 50, 100, 500, 1000)) {
+    for (dim <- List(5, 10, 50, 100, 500, 1000, 5000)) {
       val dirNums = Sobol.directionNumbers(dim).toTry.get
       val sobol = Sobol(dim, dirNums).toTry.get
-      val iter = Iterator.unfold(sobol.initialState(0))(state =>
-        val (nextState, numbers) = sobol.next.run(state).value
-        Some((numbers, nextState))
-      )
 
       val refGen =
         new SobolSequenceGenerator(dim, getClass.getResourceAsStream("/new-joe-kuo-6.21201"))
       refGen.nextVector() // skip all-zero dimension
 
-      iter
+      sobol
+        .view(0)
         .take(10000)
         .foreach: numbers =>
           val ref = refGen.nextVector().toIndexedSeq

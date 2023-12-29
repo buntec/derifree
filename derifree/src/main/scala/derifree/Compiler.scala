@@ -37,8 +37,8 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   ): Either[derifree.Error, A] =
-    simulator(spec(dsl)(rv), nSims, 0).flatMap: sims =>
-      val (sumE, n) = (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+    simulator(spec(dsl)(rv), 0).flatMap: sims =>
+      val (sumE, n) = (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
         (eval(dsl, sim, rv), Fractional[A].one)
       )
       sumE.map(a => Fractional[A].div(a, n))
@@ -53,9 +53,9 @@ private[derifree] sealed trait Compiler[T]:
     if spec0.callTimes.nonEmpty || spec0.putTimes.nonEmpty then
       fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv)
     else
-      simulator(spec0, nSims, 0).flatMap: sims =>
+      simulator(spec0, 0).flatMap: sims =>
         val (sumE, n) =
-          (sims: Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+          (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
             (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1)
           )
         sumE.map(_ / n).map(pv => FairValueResult(pv, Map.empty, Map.empty))
@@ -72,8 +72,8 @@ private[derifree] sealed trait Compiler[T]:
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    val sumE = simulator(combinedSpec, nSims, nSimsLsm).flatMap: sims =>
-      (sims: Iterable[Simulation.Realization[T]]).foldMapM: sim =>
+    val sumE = simulator(combinedSpec, offset = nSimsLsm).flatMap: sims =>
+      (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM: sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = profile(dsl, sim, rv)
         (estimatorsMapE, factorsE, profileE).mapN((estimators, factors, profile) =>
@@ -160,9 +160,9 @@ private[derifree] sealed trait Compiler[T]:
     val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
     val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
     val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    simulator(combinedSpec, nSims, offset)
+    simulator(combinedSpec, offset)
       .flatMap { sims =>
-        val sims0 = sims.toList
+        val sims0 = sims.take(nSims).toList
         val profilesE = sims0.traverse(sim => profile(dsl, sim, rv))
         profilesE.tupleLeft(sims0)
       }

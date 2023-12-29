@@ -57,17 +57,23 @@ import java.io.FileNotFoundException
 import scala.collection.immutable.ArraySeq
 
 import Sobol.*
+import scala.collection.View
 
 /*
  * https://web.maths.unsw.edu.au/~fkuo/sobol/
  */
-trait Sobol:
+sealed trait Sobol:
 
   def initialState(offset: Int): State
 
   def next: cState[State, IndexedSeq[Double]]
 
   def skipTo(pos: Int): cState[State, Unit]
+
+  def view(offset: Int): View[IndexedSeq[Double]] =
+    View.Unfold(initialState(offset)): s =>
+      val (nextState, xs) = next.run(s).value
+      Some(xs, nextState)
 
 object Sobol:
 

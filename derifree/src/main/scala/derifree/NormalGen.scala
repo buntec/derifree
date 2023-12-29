@@ -19,8 +19,9 @@ package derifree
 import cats.data.{State => cState}
 
 import scala.collection.immutable.ArraySeq
+import scala.collection.View
 
-trait NormalGen:
+sealed trait NormalGen:
 
   type State
 
@@ -32,6 +33,11 @@ trait NormalGen:
   def next: cState[State, IndexedSeq[IndexedSeq[Double]]]
 
   def skipTo(pos: Int): cState[State, Unit]
+
+  def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]] =
+    View.Unfold(init(offset)): s =>
+      val (nextState, xs) = next.run(s).value
+      Some((xs, nextState))
 
 object NormalGen:
 
