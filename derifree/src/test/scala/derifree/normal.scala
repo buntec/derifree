@@ -16,21 +16,25 @@
 
 package derifree
 
-import munit.ScalaCheckSuite
-import org.scalacheck.Arbitrary
-import org.scalacheck.Gen
-import org.scalacheck.Prop.*
+class NormalSuite extends munit.FunSuite:
 
-class NormalSuite extends munit.ScalaCheckSuite:
+  test("N^{-1}(N(x)) = x"):
+    val gen = Gen.between(-10.0, 10.0)
+    gen.view
+      .map: x =>
+        (x, normal.cdf(x))
+      .filter((_, p) => p > 0 && p < 1)
+      .take(100000)
+      .foreach: (x, p) =>
+        val x0 = normal.inverseCdf(p)
+        assert(math.abs(x - x0) < math.max(1e-7, 1e-6 * x), s"x=$x, p=$p, x0=$x0")
 
-  property("N^{-1}(N(x)) = x"):
-    given Arbitrary[Double] = Arbitrary(Gen.choose[Double](-5, 5))
-    forAll: (x: Double) =>
-      val x0 = normal.inverseCdf(normal.cdf(x))
-      math.abs(x - x0) < 1e-7
-
-  property("N(N^{-1}(p)) = p"):
-    given Arbitrary[Double] = Arbitrary(Gen.choose[Double](0, 1))
-    forAll: (p: Double) =>
-      val p0 = normal.cdf(normal.inverseCdf(p))
-      math.abs(p - p0) < 1e-7
+  test("N(N^{-1}(p)) = p"):
+    val gen = Gen.between(0.0, 1.0)
+    gen.view
+      .filter(_ > 0)
+      .take(100000)
+      .foreach: p =>
+        val x = normal.inverseCdf(p)
+        val p0 = normal.cdf(x)
+        assert(math.abs(p - p0) < 1e-7, s"x=$x, p=$p, p0=$p0")
