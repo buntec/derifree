@@ -180,6 +180,7 @@ val callableBarrierReverseConvertible =
     TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
     NormalGen.Factory.sobol(dirNums),
     refTime,
+    Ccy.USD,
     spots,
     vols,
     correlations,

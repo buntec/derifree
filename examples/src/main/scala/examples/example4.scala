@@ -51,17 +51,19 @@ val europeanCall =
   val divs = Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
   val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
   val borrow = YieldCurve.zero[YearFraction]
-  val forwards = Map(udl -> Forward(spot, divs, discount, borrow))
-  val vols = Map(udl -> vol)
+  val assets = List(
+    models.blackscholes.Asset(udl, Ccy.USD, Forward(spot, divs, discount, borrow), vol)
+  )
 
   val sim = models.blackscholes.simulator(
     TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
     NormalGen.Factory.sobol(dirNums),
     refTime,
-    forwards,
-    vols,
+    Ccy.USD,
+    assets,
     Map.empty,
-    discount
+    discount,
+    Map.empty
   )
 
   val nSims = (1 << 15) - 1

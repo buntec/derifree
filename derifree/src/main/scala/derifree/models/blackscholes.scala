@@ -28,34 +28,50 @@ import org.apache.commons.math3.util.{FastMath => math}
 import scala.collection.View
 import scala.collection.immutable.ArraySeq
 
+final case class Asset[T](
+    name: String,
+    ccy: Ccy,
+    forward: Forward[T],
+    vol: Vol
+)
+
 def simulator[T: TimeLike](
     timeGridFactory: TimeGrid.Factory,
     normalGenFactory: NormalGen.Factory,
     refTime0: T,
+    ccy: Ccy,
     spots: Map[String, Double],
     vols: Map[String, Vol],
     correlations: Map[(String, String), Double],
     rate: Rate
 ): Simulator[T] =
   val discountCurve = YieldCurve.fromContinuouslyCompoundedRate(rate, refTime0)
+  val assets =
+    spots
+      .map((udl, s0) =>
+        Asset(udl, ccy, Forward(s0, Nil, discountCurve, YieldCurve.zero), vols(udl))
+      )
+      .toList
   simulator(
     timeGridFactory,
     normalGenFactory,
     refTime0,
-    spots.map((udl, s0) => udl -> Forward(s0, Nil, discountCurve, YieldCurve.zero)),
-    vols,
+    ccy,
+    assets,
     correlations,
-    discountCurve
+    discountCurve,
+    Map.empty
   )
 
 def simulator[T: TimeLike](
     timeGridFactory: TimeGrid.Factory,
     normalGenFactory: NormalGen.Factory,
     refTime0: T,
-    forwards: Map[String, Forward[T]],
-    vols: Map[String, Vol],
+    ccy: Ccy,
+    assets: List[Asset[T]],
     correlations: Map[(String, String), Double],
-    discountCurve: YieldCurve[T]
+    discountCurve: YieldCurve[T],
+    fxVols: Map[CcyPair, Vol]
 ): Simulator[T] =
   new Simulator[T]:
 
@@ -67,6 +83,9 @@ def simulator[T: TimeLike](
     ): Either[derifree.Error, View[Realization[T]]] =
       val udls = spec.spotObs.keySet.toList
       val nUdl = udls.length
+      val assetsByUdl = assets.map(asset => asset.name -> asset).toMap
+      val forwards = assets.map(asset => asset.name -> asset.forward).toMap
+      val vols = assets.map(asset => asset.name -> asset.vol).toMap
       val divTimes = forwards.values.map(_.dividends.map(_.exDiv)).toList.flatten.toSet
       val obsTimes =
         (divTimes union spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
@@ -110,13 +129,44 @@ def simulator[T: TimeLike](
       val volsE =
         udls.traverse(udl => vols.get(udl).toRight(Simulator.Error(s"missing vol for $udl")))
 
+      val quantoDriftAdjE = udls
+        .traverse(udl =>
+          assetsByUdl
+            .get(udl)
+            .toRight(Simulator.Error(s"missing asset for $udl"))
+            .flatMap: asset =>
+              if asset.ccy == ccy then 0.0.pure
+              else
+                val ccyPair = CcyPair(asset.ccy, ccy)
+                val corr = correlations
+                  .get((ccyPair.toString, udl))
+                  .orElse(correlations.get((udl, ccyPair.toString)))
+                  .orElse(
+                    correlations
+                      .get((ccyPair.inverse.toString, udl))
+                      .orElse(correlations.get((udl, ccyPair.inverse.toString)))
+                      .map(-_)
+                  )
+                  .toRight(
+                    Simulator
+                      .Error(s"missing correlation between $udl and $ccyPair (or its inverse)")
+                  )
+                val fxVol = fxVols
+                  .get(ccyPair)
+                  .orElse(fxVols.get(ccyPair.inverse))
+                  .toRight(Simulator.Error(s"missing vol for $ccyPair"))
+                (corr, fxVol).mapN((corr, fxVol) => -corr * fxVol.toDouble * asset.vol.toDouble)
+        )
+        .map(_.toArray)
+
       (
         normalGenFactory(nUdl, nt - 1),
         utils.cholesky(correlations, udls),
         timeIndexE,
         spotObsTimesE,
         volsE,
-      ).mapN: (normalGen, w, timeIndex, spotObsTimes, vols0) =>
+        quantoDriftAdjE
+      ).mapN: (normalGen, w, timeIndex, spotObsTimes, vols0, quantoDriftAdj) =>
 
         val jumps = Array.ofDim[Double](nUdl, nt)
         val vols = Array.ofDim[Double](nUdl, nt)
@@ -189,8 +239,9 @@ def simulator[T: TimeLike](
               while (i < nUdl) {
                 val v = vols(i)(j)
                 vols(i)(j + 1) = v
+                val q = quantoDriftAdj(i)
                 logspotsPure(i)(j + 1) =
-                  logspotsPure(i)(j) - 0.5 * v * v * dtsArr(j) + v * sdts(j) * z(i)
+                  logspotsPure(i)(j) + (q - 0.5 * v * v) * dtsArr(j) + v * sdts(j) * z(i)
                 i += 1
               }
 
