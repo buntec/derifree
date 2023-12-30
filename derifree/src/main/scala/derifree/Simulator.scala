@@ -37,10 +37,11 @@ trait Simulator[T]:
 
 object Simulator:
 
-  enum Error extends derifree.Error:
-    case MissingTimeIndex
-    case MissingForward
-    case MissingVol
+  enum Error(message: String) extends derifree.Error(message):
+    case MissingTimeIndex(message: String) extends Error(message)
+    case MissingForward(message: String) extends Error(message)
+    case MissingVol(message: String) extends Error(message)
+    case Other(message: String) extends Error(message)
 
   def blackScholes[T: TimeLike](
       timeGridFactory: TimeGrid.Factory,
@@ -86,9 +87,12 @@ object Simulator:
           (divTimes union spec.spotObs.values.reduce(_ union _) union spec.discountObs).toList
             .sorted(Order[T].toOrdering)
 
-        val spotObsTimesMaybe = udls
+        val spotObsTimesE = udls
           .traverse(udl =>
-            (spec.spotObs.get(udl), forwards.get(udl))
+            (
+              spec.spotObs.get(udl).toRight(Error.Other(s"missing spot obs for $udl")),
+              forwards.get(udl).toRight(Error.MissingForward(s"missing forward for $udl"))
+            )
               .mapN { (spotObs, forward) =>
                 (spotObs union forward.dividends.map(_.exDiv).toSet).toList
                   .sorted(Order[T].toOrdering)
@@ -112,14 +116,18 @@ object Simulator:
         val sdts = dts.map(dt => math.sqrt(dt.toDouble))
         val nt = timeGrid.length
 
-        val volsMaybe = udls.traverse(udl => vols.get(udl))
+        val volsE =
+          udls.traverse(udl => vols.get(udl).toRight(Error.MissingVol(s"missing vol for $udl")))
 
         (
           normalGenFactory(nUdl, nt - 1),
           utils.cholesky(correlations, udls),
-          Either.fromOption(timeIndexMaybe, Error.MissingTimeIndex),
-          Either.fromOption(spotObsTimesMaybe, Error.MissingForward),
-          Either.fromOption(volsMaybe, Error.MissingVol)
+          Either.fromOption(
+            timeIndexMaybe,
+            Error.MissingTimeIndex("failed to build time index")
+          ),
+          spotObsTimesE,
+          volsE,
         ).mapN: (normalGen, w, timeIndex, spotObsTimes, vols0) =>
 
           val jumps = Array.ofDim[Double](nUdl, nt)

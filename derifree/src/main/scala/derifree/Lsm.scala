@@ -29,9 +29,9 @@ private[derifree] trait Lsm:
 
 private[derifree] object Lsm:
 
-  enum Error extends derifree.Error:
-    case BadNumericsException(override val getMessage: String)
-    case BadInputs(override val getMessage: String)
+  enum Error(message: String) extends derifree.Error(message):
+    case BadNumericsException(message: String) extends Error(message)
+    case BadInputs(message: String) extends Error(message)
 
   trait Estimator:
 

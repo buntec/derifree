@@ -34,7 +34,7 @@ val europeanPut =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 val americanPut =
@@ -46,9 +46,9 @@ val americanPut =
       .tabulate(m)(i => (expiry / m) * i)
       .drop(1)
       .traverse(t =>
-        spot(udl, t).flatMap(s_t => puttable(max(1 - s_t / s0, 0.0).some.filter(_ > 0), t))
+        spot(udl, t).flatMap(s_t => puttable(max(1 - s_t / s0, 0.0).some.filter(_ > 0), Ccy.USD, t))
       )
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 @main def run: Unit =

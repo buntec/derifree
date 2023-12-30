@@ -18,9 +18,9 @@ package derifree
 
 import scala.util.control.NoStackTrace
 
-abstract class Error extends NoStackTrace
+abstract class Error(override val getMessage: String) extends NoStackTrace
 
 object Error:
-  case class Generic(override val getMessage: String) extends Error
-  case class MissingData(override val getMessage: String) extends Error
-  case class BadNumerics(override val getMessage: String) extends Error
+  case class Generic(message: String) extends Error(message)
+  case class MissingData(message: String) extends Error(message)
+  case class BadNumerics(message: String) extends Error(message)

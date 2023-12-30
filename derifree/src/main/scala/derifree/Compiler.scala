@@ -37,11 +37,14 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   ): Either[derifree.Error, A] =
-    simulator(spec(dsl)(rv), 0).flatMap: sims =>
-      val (sumE, n) = (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+    for
+      spec0 <- spec(dsl)(rv)
+      sims <- simulator(spec0, 0)
+      (sumE, n) = (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
         (eval(dsl, sim, rv), Fractional[A].one)
       )
-      sumE.map(a => Fractional[A].div(a, n))
+      sum <- sumE
+    yield Fractional[A].div(sum, n)
 
   def fairValue[A](
       dsl: Dsl[T],
@@ -49,16 +52,16 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
-    val spec0 = spec(dsl)(rv)
-    if spec0.callTimes.nonEmpty || spec0.putTimes.nonEmpty then
-      fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv)
-    else
-      simulator(spec0, 0).flatMap: sims =>
-        val (sumE, n) =
-          (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
-            (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1)
-          )
-        sumE.map(_ / n).map(pv => FairValueResult(pv, Map.empty, Map.empty))
+    spec(dsl)(rv).flatMap: spec0 =>
+      if spec0.callTimes.nonEmpty || spec0.putTimes.nonEmpty then
+        fairValueByLsm(dsl, simulator, nSims / 8, nSims, rv)
+      else
+        simulator(spec0, 0).flatMap: sims =>
+          val (sumE, n) =
+            (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM(sim =>
+              (profile(dsl, sim, rv).map(_.cashflows.map(_(1)).sum), 1)
+            )
+          sumE.map(_ / n).map(pv => FairValueResult(pv, Map.empty, Map.empty))
 
   private def fairValueByLsm[A](
       dsl: Dsl[T],
@@ -67,16 +70,17 @@ private[derifree] sealed trait Compiler[T]:
       nSims: Int,
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, FairValueResult[T]] =
-    val estimatorsMapE = lsmEstimators[A](dsl, simulator, nSimsLsm, 0, rv)
-    val spec0 = spec(dsl)(rv)
-    val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
-    val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
-    val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    val sumE = simulator(combinedSpec, offset = nSimsLsm).flatMap: sims =>
-      (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM: sim =>
+    for
+      estimators <- lsmEstimators[A](dsl, simulator, nSimsLsm, 0, rv)
+      spec0 <- spec(dsl)(rv)
+      earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
+      facRvs <- factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
+      combinedSpec <- spec(dsl)(facRvs.sequence *> rv)
+      sims <- simulator(combinedSpec, offset = nSimsLsm)
+      tuple <- (sims.take(nSims): Iterable[Simulation.Realization[T]]).foldMapM { sim =>
         val factorsE = facRvs.traverse(rv => eval(dsl, sim, rv))
         val profileE = profile(dsl, sim, rv)
-        (estimatorsMapE, factorsE, profileE).mapN((estimators, factors, profile) =>
+        (factorsE, profileE).mapN((factors, profile) =>
           val earlyExerciseTimeAndAmountMaybe =
             (earlyExTimes zip factors).collectFirstSome:
               case (t, fac) =>
@@ -115,15 +119,15 @@ private[derifree] sealed trait Compiler[T]:
             )
           )
         )
-    sumE.map((pv, nCalls, nPuts) =>
-      FairValueResult(
-        pv / nSims,
-        (nCalls |+| Counter(spec0.callTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
-          k -> n.toDouble / nSims
-        ),
-        (nPuts |+| Counter(spec0.putTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
-          k -> n.toDouble / nSims
-        )
+      }
+      (pv, nCalls, nPuts) = tuple // why can't this be done in one line?
+    yield FairValueResult(
+      pv / nSims,
+      (nCalls |+| Counter(spec0.callTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
+        k -> n.toDouble / nSims
+      ),
+      (nPuts |+| Counter(spec0.putTimes.toList.map(_ -> 0)*)).toMap.map((k, n) =>
+        k -> n.toDouble / nSims
       )
     )
 
@@ -141,8 +145,11 @@ private[derifree] sealed trait Compiler[T]:
   ): Either[Error, Profile[T]] =
     rv.foldMap(toProfileWriter(dsl, sim)).written.map(_.build)
 
-  private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Simulation.Spec[T] =
+  private def spec[A](dsl: Dsl[T])(rv: dsl.RV[A]): Either[Error, Simulation.Spec[T]] =
     rv.foldMap(toSpecWriter(dsl)).written.map(_.build)
+
+  private def barriers[A](dsl: Dsl[T])(rv: dsl.RV[A]): List[dsl.Barrier] =
+    rv.foldMap(toBarrierWriter(dsl)).run(0)
 
   extension [A](l: List[A])
     def zipWithNext: List[(A, Option[A])] =
@@ -156,82 +163,80 @@ private[derifree] sealed trait Compiler[T]:
       rv: dsl.RV[A]
   )(using TimeLike[T]): Either[derifree.Error, Map[T, Lsm.Estimator]] =
     val lsm0 = Lsm.fromPoly(3)
-    val spec0 = spec(dsl)(rv)
-    val earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
-    val facRvs = factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
-    val combinedSpec = spec(dsl)(facRvs.sequence *> rv)
-    simulator(combinedSpec, offset)
-      .flatMap { sims =>
-        val sims0 = sims.take(nSims).toList
-        val profilesE = sims0.traverse(sim => profile(dsl, sim, rv))
-        profilesE.tupleLeft(sims0)
-      }
-      .flatMap { case (sims, profiles) =>
-        (earlyExTimes.zipWithNext zip facRvs).reverse
-          .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
-            case ((futCFs, estimators), ((earlyExTime, nextEarlyExTimeMaybe), factorRv)) =>
-              val rowsE = (sims zip profiles zip futCFs).traverse {
-                case ((sim, profile), futCf) =>
-                  eval(dsl, sim, factorRv).map: factors =>
-                    val contValue = profile.cashflows
-                      .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
-                      .map(_(1))
-                      .sum + futCf
-                    val callAmountMaybe = profile.callAmounts.get(earlyExTime)
-                    val putAmountMaybe = profile.putAmounts.get(earlyExTime)
-                    (factors, contValue, callAmountMaybe, putAmountMaybe)
-              }
-              val estimatorE = rowsE.flatMap(rows =>
-                val filteredRows = rows
-                  .filter((_, _, callAmountMaybe, putAmountMaybe) =>
-                    callAmountMaybe.isDefined || putAmountMaybe.isDefined
-                  )
-                  .map((factors, contValue, _, _) => (factors, contValue.toDouble))
-                if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
-                then lsm0.continuationValueEstimator(filteredRows).map(_.some)
-                else Right(None) // too few relevant paths for least-squares
-              )
-              val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>
-                estimatorMaybe match
-                  case None => rows.map((_, futCf, _, _) => futCf)
-                  case Some(estimator) =>
-                    rows.map((factors, futCf, callAmount, putAmount) =>
-                      val estContValue = estimator(factors.toIndexedSeq)
-                      (callAmount, putAmount) match
-                        case (Some(c), None) if c.toDouble < estContValue => c
-                        case (None, Some(p)) if p.toDouble > estContValue => p
-                        case (Some(c), Some(p))                           =>
-                          // caller takes precedence
-                          if c.toDouble < estContValue then c
-                          else if p.toDouble > estContValue then p
-                          else futCf
-                        case _ => futCf
-                    )
-              )
-              (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
-                (
-                  futCfs,
-                  estimatorMaybe.fold(estimators)(est => estimators + (earlyExTime -> est))
+    for {
+      spec0 <- spec(dsl)(rv)
+      earlyExTimes = (spec0.callTimes union spec0.putTimes).toList.sorted
+      facRvs <- factorRvs(dsl, earlyExTimes, simulator.refTime, rv)
+      combinedSpec <- spec(dsl)(facRvs.sequence *> rv)
+      sims0 <- simulator(combinedSpec, offset)
+      sims = sims0.take(nSims).toList
+      profiles <- sims.traverse(sim => profile(dsl, sim, rv))
+      estimators <- (earlyExTimes.zipWithNext zip facRvs).reverse
+        .foldLeftM((List.fill(nSims)(PV(0.0)), Map.empty[T, Lsm.Estimator])) {
+          case ((futCFs, estimators), ((earlyExTime, nextEarlyExTimeMaybe), factorRv)) =>
+            val rowsE = (sims zip profiles zip futCFs).traverse {
+              case ((sim, profile), futCf) =>
+                eval(dsl, sim, factorRv).map: factors =>
+                  val contValue = profile.cashflows
+                    .filter((t, _) => t > earlyExTime && nextEarlyExTimeMaybe.forall(t < _))
+                    .map(_(1))
+                    .sum + futCf
+                  val callAmountMaybe = profile.callAmounts.get(earlyExTime)
+                  val putAmountMaybe = profile.putAmounts.get(earlyExTime)
+                  (factors, contValue, callAmountMaybe, putAmountMaybe)
+            }
+            val estimatorE = rowsE.flatMap(rows =>
+              val filteredRows = rows
+                .filter((_, _, callAmountMaybe, putAmountMaybe) =>
+                  callAmountMaybe.isDefined || putAmountMaybe.isDefined
                 )
+                .map((factors, contValue, _, _) => (factors, contValue.toDouble))
+              if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
+              then lsm0.continuationValueEstimator(filteredRows).map(_.some)
+              else Right(None) // too few relevant paths for least-squares
+            )
+            val nextFutCfs = (estimatorE, rowsE).mapN((estimatorMaybe, rows) =>
+              estimatorMaybe match
+                case None => rows.map((_, futCf, _, _) => futCf)
+                case Some(estimator) =>
+                  rows.map((factors, futCf, callAmount, putAmount) =>
+                    val estContValue = estimator(factors.toIndexedSeq)
+                    (callAmount, putAmount) match
+                      case (Some(c), None) if c.toDouble < estContValue => c
+                      case (None, Some(p)) if p.toDouble > estContValue => p
+                      case (Some(c), Some(p))                           =>
+                        // caller takes precedence
+                        if c.toDouble < estContValue then c
+                        else if p.toDouble > estContValue then p
+                        else futCf
+                      case _ => futCf
+                  )
+            )
+            (nextFutCfs, estimatorE).mapN((futCfs, estimatorMaybe) =>
+              (
+                futCfs,
+                estimatorMaybe.fold(estimators)(est => estimators + (earlyExTime -> est))
               )
-          }
-          .map(_(1))
-      }
+            )
+        }
+        .map(_(1))
+    } yield estimators
 
   // Factors for Longstaff-Schwartz regression
   // TODO: for stochastic vols or rates we should include vols and discount factors
   private def factorRvs[A](dsl: Dsl[T], times: List[T], refTime: T, rv: dsl.RV[A])(using
       TimeLike[T]
-  ): List[dsl.RV[List[Double]]] =
-    val spec0 = spec(dsl)(rv)
-    val barriers = rv.foldMap(toBarrierWriter(dsl)).run(0)
-    val udls = spec0.spotObs.keySet.toList.sorted
-    times.map: t =>
+  ): Either[Error, List[dsl.RV[List[Double]]]] =
+    for
+      spec0 <- spec(dsl)(rv)
+      barriers0 = barriers(dsl)(rv)
+      udls = spec0.spotObs.keys.toList.sorted
+    yield times.map: t =>
       import dsl.*
       for
         spots0 <- udls.traverse(udl => spot(udl, refTime))
         spots <- udls.traverse(udl => spot(udl, t))
-        hitProbs <- barriers.traverse: barrier =>
+        hitProbs <- barriers0.traverse: barrier =>
           barrier match
             case Barrier.Continuous(direction, levels, from, to, policy) =>
               if (from >= t) then pure(0.0)
@@ -289,22 +294,32 @@ private[derifree] object Compiler:
 
   case class SpecBuilder[T](
       spotObs: Chain[(String, T)],
-      discountObs: Chain[T],
+      discountObs: Chain[(T, Ccy)],
       putTimes: Chain[T],
       callTimes: Chain[T]
   ):
-    def build: Simulation.Spec[T] = Simulation.Spec[T](
-      spotObs.toList.groupBy(_(0)).map((udl, a) => udl -> a.map(_(1)).toSet),
-      discountObs.iterator.toSet,
-      putTimes.iterator.toSet,
-      callTimes.iterator.toSet
-    )
+    def build: Either[Error, Simulation.Spec[T]] =
+      discountObs.map(_(1)).toList match {
+        case ccy :: Nil =>
+          val discountTs = discountObs.map(_(0)).iterator.toSet
+          Right(
+            Simulation.Spec[T](
+              ccy,
+              spotObs.toList.groupBy(_(0)).map((udl, a) => udl -> a.map(_(1)).toSet),
+              discountTs,
+              putTimes.iterator.toSet,
+              callTimes.iterator.toSet
+            )
+          )
+        case Nil  => Left(Error.AmbiguousCcy("no currency found"))
+        case ccys => Left(Error.AmbiguousCcy(s"multiple ccys found: $ccys"))
+      }
 
   object SpecBuilder:
 
     def make[T](
         spotObs: Chain[(String, T)] = Chain.empty,
-        discountObs: Chain[T] = Chain.empty,
+        discountObs: Chain[(T, Ccy)] = Chain.empty,
         putTimes: Chain[T] = Chain.empty,
         callTimes: Chain[T] = Chain.empty
     ): SpecBuilder[T] = SpecBuilder(spotObs, discountObs, putTimes, callTimes)
@@ -316,7 +331,7 @@ private[derifree] object Compiler:
       spotObs = Chain.one((ticker -> time))
     )
 
-    def discountObs[T](time: T) = make(discountObs = Chain.one(time))
+    def discountObs[T](time: T, ccy: Ccy) = make(discountObs = Chain.one(time -> ccy))
 
     def putTime[T](time: T) = make(putTimes = Chain.one(time))
 
@@ -332,8 +347,9 @@ private[derifree] object Compiler:
           x.callTimes |+| y.callTimes
         )
 
-  enum Error extends derifree.Error:
-    case Generic(override val getMessage: String)
+  enum Error(message: String) extends derifree.Error(message):
+    case Generic(message: String) extends Error(message)
+    case AmbiguousCcy(message: String) extends Error(message)
 
   // The implementation uses mutable state for performance,
   // but this is never observable by clients.
@@ -349,11 +365,11 @@ private[derifree] object Compiler:
       protected def toBarrierWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[List[dsl.Barrier], _] =
         new (dsl.RVA ~> Writer[List[dsl.Barrier], _]):
           def apply[A](fa: dsl.RVA[A]): Writer[List[dsl.Barrier], A] = fa match
-            case dsl.HitProb(barrier) => Writer(List(barrier), 0.5)
-            case dsl.Cashflow(_, _)   => Writer.value(PV(1.0))
-            case dsl.Spot(_, _)       => Writer.value(1.0)
-            case dsl.Callable(_, _)   => Writer.value(())
-            case dsl.Puttable(_, _)   => Writer.value(())
+            case dsl.HitProb(barrier)  => Writer(List(barrier), 0.5)
+            case dsl.Cashflow(_, _, _) => Writer.value(PV(1.0))
+            case dsl.Spot(_, _)        => Writer.value(1.0)
+            case dsl.Callable(_, _, _) => Writer.value(())
+            case dsl.Puttable(_, _, _) => Writer.value(())
 
       def toSpecWriter(dsl: Dsl[T]): dsl.RVA ~> Writer[SpecBuilder[T], _] =
         new (dsl.RVA ~> Writer[SpecBuilder[T], _]):
@@ -361,8 +377,8 @@ private[derifree] object Compiler:
             case dsl.Spot(ticker, time) =>
               Writer(SpecBuilder.spotObs(ticker, time), 1.0)
 
-            case dsl.Cashflow(amount, time) =>
-              Writer(SpecBuilder.discountObs(time), PV(1.0))
+            case dsl.Cashflow(amount, ccy, time) =>
+              Writer(SpecBuilder.discountObs(time, ccy), PV(1.0))
 
             case dsl.HitProb(dsl.Barrier.Discrete(_, levels, _)) =>
               Writer(
@@ -380,14 +396,14 @@ private[derifree] object Compiler:
                 0.5
               )
 
-            case dsl.Puttable(_, time) =>
+            case dsl.Puttable(_, ccy, time) =>
               Writer(
-                SpecBuilder.putTime(time) |+| SpecBuilder.discountObs(time),
+                SpecBuilder.putTime(time) |+| SpecBuilder.discountObs(time, ccy),
                 ()
               )
 
-            case dsl.Callable(_, time) =>
-              Writer(SpecBuilder.callTime(time) |+| SpecBuilder.discountObs(time), ())
+            case dsl.Callable(_, ccy, time) =>
+              Writer(SpecBuilder.callTime(time) |+| SpecBuilder.discountObs(time, ccy), ())
 
       def toProfileWriter(
           dsl: Dsl[T],
@@ -416,7 +432,7 @@ private[derifree] object Compiler:
                     )
                 )
 
-              case dsl.Cashflow(amount, time) =>
+              case dsl.Cashflow(amount, _, time) =>
                 WriterT(
                   Either
                     .fromOption(
@@ -591,7 +607,7 @@ private[derifree] object Compiler:
                     1 - p
                 WriterT.liftF(e)
 
-              case dsl.Puttable(amount, time) =>
+              case dsl.Puttable(amount, _, time) =>
                 amount.fold(WriterT.liftF(Either.right[Error, Unit](())))(amount =>
                   WriterT(
                     Either
@@ -603,7 +619,7 @@ private[derifree] object Compiler:
                   )
                 )
 
-              case dsl.Callable(amount, time) =>
+              case dsl.Callable(amount, _, time) =>
                 amount.fold(WriterT.liftF(Either.right[Error, Unit](())))(amount =>
                   WriterT(
                     Either

@@ -33,14 +33,14 @@ val europeanPut =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 val europeanCall =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(s / s0 - 1, 0), expiry)
+    _ <- cashflow(max(s / s0 - 1, 0), Ccy.USD, expiry)
   yield ()
 
 @main def run: Unit =
