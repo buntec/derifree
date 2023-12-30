@@ -299,14 +299,13 @@ private[derifree] object Compiler:
       callTimes: Chain[T]
   ):
     def build: Either[Error, Simulation.Spec[T]] =
-      discountObs.map(_(1)).toList match {
+      discountObs.map(_(1)).toList.distinct match {
         case ccy :: Nil =>
-          val discountTs = discountObs.map(_(0)).iterator.toSet
           Right(
             Simulation.Spec[T](
               ccy,
               spotObs.toList.groupBy(_(0)).map((udl, a) => udl -> a.map(_(1)).toSet),
-              discountTs,
+              discountObs.map(_(0)).iterator.toSet,
               putTimes.iterator.toSet,
               callTimes.iterator.toSet
             )
