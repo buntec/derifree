@@ -60,7 +60,7 @@ class VanillaSuite extends munit.FunSuite:
       val europeanVanilla = for
         s0 <- spot(udl, refTime)
         s <- spot(udl, expiry)
-        _ <- cashflow(max(omega * (s / s0 - strike), 0), settle)
+        _ <- cashflow(max(omega * (s / s0 - strike), 0), Ccy.USD, settle)
       yield ()
 
       val t = refTime.yearFractionTo(expiry)
