@@ -59,7 +59,6 @@ val europeanCall =
     TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
     NormalGen.Factory.sobol(dirNums),
     refTime,
-    Ccy.USD,
     assets,
     Map.empty,
     discount,

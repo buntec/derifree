@@ -56,7 +56,6 @@ def simulator[T: TimeLike](
     timeGridFactory,
     normalGenFactory,
     refTime0,
-    ccy,
     assets,
     correlations,
     discountCurve,
@@ -67,7 +66,6 @@ def simulator[T: TimeLike](
     timeGridFactory: TimeGrid.Factory,
     normalGenFactory: NormalGen.Factory,
     refTime0: T,
-    ccy: Ccy,
     assets: List[Asset[T]],
     correlations: Map[(String, String), Double],
     discountCurve: YieldCurve[T],
@@ -81,6 +79,7 @@ def simulator[T: TimeLike](
         spec: Spec[T],
         offset: Int
     ): Either[derifree.Error, View[Realization[T]]] =
+      val ccy = spec.ccy
       val udls = spec.spotObs.keySet.toList
       val nUdl = udls.length
       val assetsByUdl = assets.map(asset => asset.name -> asset).toMap

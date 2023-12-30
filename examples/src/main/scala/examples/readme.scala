@@ -1,15 +1,6 @@
-# Derifree
+package examples
+package readme
 
-Derivative pricing for the ~~lactose~~ side-effect intolerant.
-
-Derifree is an experimental library exploring the use of free monads to
-implement a contract definition language for (equity) derivatives.
-
-*This is work in progress!*
-
-## Examples
-
-```scala mdoc:silent
 import cats.*
 import cats.syntax.all.*
 import derifree.*
@@ -212,39 +203,38 @@ val sim = models.blackscholes.simulator(
   List(aapl, msft, goog),
   correlations,
   discount,
-  fxVols,
+  Map.empty
 )
 
 // the number of Monte Carlo simulations
 val nSims = 32767
-```
 
-```scala mdoc
-europeanCall.fairValue(sim, nSims)
+object App:
 
-// should be cheaper than plain European call
-europeanUpAndOutCall.fairValue(sim, nSims)
+  europeanCall.fairValue(sim, nSims)
 
-europeanPut.fairValue(sim, nSims)
+  // should be cheaper than plain European call
+  europeanUpAndOutCall.fairValue(sim, nSims)
 
-// should be more expensive than European put
-bermudanPut.fairValue(sim, nSims)
+  europeanPut.fairValue(sim, nSims)
 
-// what are the probabilities of early exercise?
-bermudanPut.putProbabilities(sim, nSims)
+  // should be more expensive than European put
+  bermudanPut.fairValue(sim, nSims)
 
-quantoEuropeanCall.fairValue(sim, nSims)
+  // what are the probabilities of early exercise?
+  bermudanPut.putProbabilities(sim, nSims)
 
-worstOfContinuousDownAndInPut.fairValue(sim, nSims)
+  quantoEuropeanCall.fairValue(sim, nSims)
 
-// should be cheaper than continuous barrier
-worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
+  worstOfContinuousDownAndInPut.fairValue(sim, nSims)
 
-barrierReverseConvertible.fairValue(sim, nSims)
+  // should be cheaper than continuous barrier
+  worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
 
-// should be cheaper than non-callable BRC
-callableBarrierReverseConvertible.fairValue(sim, nSims)
+  barrierReverseConvertible.fairValue(sim, nSims)
 
-// what are the probabilities of being called?
-callableBarrierReverseConvertible.callProbabilities(sim, nSims)
-```
+  // should be cheaper than non-callable BRC
+  callableBarrierReverseConvertible.fairValue(sim, nSims)
+
+  // what are the probabilities of being called?
+  callableBarrierReverseConvertible.callProbabilities(sim, nSims)
