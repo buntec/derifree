@@ -33,16 +33,16 @@ class VanillaSuite extends munit.FunSuite:
 
   val dirNums = Sobol.directionNumbers(500).toTry.get
 
-  val sim: Simulator[java.time.Instant] =
-    Simulator.blackScholes(
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      correlations,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    Ccy.USD,
+    spots,
+    vols,
+    correlations,
+    rate
+  )
 
   test("Black-Scholes Monte Carlo price is close to closed-form price."):
     val nSims = (1 << 16) - 1
@@ -60,7 +60,7 @@ class VanillaSuite extends munit.FunSuite:
       val europeanVanilla = for
         s0 <- spot(udl, refTime)
         s <- spot(udl, expiry)
-        _ <- cashflow(max(omega * (s / s0 - strike), 0), settle)
+        _ <- cashflow(max(omega * (s / s0 - strike), 0), Ccy.USD, settle)
       yield ()
 
       val t = refTime.yearFractionTo(expiry)

@@ -16,20 +16,12 @@
 
 package derifree
 
-import derifree.Simulation.Realization
-import derifree.Simulation.Spec
+import cats.Show
 
-import scala.collection.View
+final case class CcyPair(foreign: Ccy, domestic: Ccy):
+  override def toString(): String = s"$foreign$domestic"
+  def inverse: CcyPair = CcyPair(domestic, foreign)
 
-trait Simulator[T]:
+object CcyPair:
 
-  def apply(
-      spec: Simulation.Spec[T],
-      offset: Int
-  ): Either[derifree.Error, View[Simulation.Realization[T]]]
-
-  def refTime: T
-
-object Simulator:
-
-  case class Error(message: String) extends derifree.Error(message)
+  given Show[CcyPair] = Show.fromToString[CcyPair]

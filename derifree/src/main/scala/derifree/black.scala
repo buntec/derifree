@@ -31,10 +31,10 @@ object OptionType:
       case OptionType.Call => 1
       case OptionType.Put  => -1
 
-enum Error extends derifree.Error:
-  case PriceExceedsUpperBound
-  case PriceBelowIntrinsic
-  case SolverFailed(info: String)
+enum Error(message: String) extends derifree.Error(message):
+  case PriceExceedsUpperBound extends Error("price exceeds upper bound")
+  case PriceBelowIntrinsic extends Error("price is below intrinsic value")
+  case SolverFailed(info: String) extends Error(s"solver failed: $info")
 
 enum Solver:
   case Brent(maxIters: Int, absAccuracy: Double, minVol: Double, maxVol: Double)

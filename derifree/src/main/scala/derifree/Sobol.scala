@@ -77,7 +77,7 @@ sealed trait Sobol:
 
 object Sobol:
 
-  enum Error(override val getMessage: String) extends derifree.Error:
+  enum Error(message: String) extends derifree.Error(message):
     case MaxDimensionsExceeded extends Error("max dimensions exceeded")
     case FailedToParseDirectionNumbers(line: String) extends Error(s"failed to parse: $line")
     case Wrapper(t: Throwable) extends Error(t.getMessage)

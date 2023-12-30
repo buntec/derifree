@@ -34,7 +34,7 @@ val europeanPut =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 val americanPut =
@@ -46,9 +46,11 @@ val americanPut =
       .tabulate(m)(i => (expiry / m) * i)
       .drop(1)
       .traverse(t =>
-        spot(udl, t).flatMap(s_t => puttable(max(1 - s_t / s0, 0.0).some.filter(_ > 0), t))
+        spot(udl, t).flatMap(s_t =>
+          puttable(max(1 - s_t / s0, 0.0).some.filter(_ > 0), Ccy.USD, t)
+        )
       )
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 @main def run: Unit =
@@ -58,16 +60,16 @@ val americanPut =
   val vols = Map(udl -> 0.30.vol)
   val rate = 0.05.rate
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      Map.empty,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    Ccy.USD,
+    spots,
+    vols,
+    Map.empty,
+    rate
+  )
 
   val nSims = (1 << 15) - 1
 

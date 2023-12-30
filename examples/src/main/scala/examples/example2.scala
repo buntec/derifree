@@ -42,7 +42,7 @@ val worstOfDip = for
       Barrier.Policy.Or
     )
   )
-  _ <- cashflow(pHit * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0)), settle)
+  _ <- cashflow(pHit * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0)), Ccy.USD, settle)
 yield ()
 
 @main def run: Unit =
@@ -53,16 +53,16 @@ yield ()
   val correlations = Map(("AAPL", "META") -> 0.7)
   val rate = 0.04.rate
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      correlations,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    Ccy.USD,
+    spots,
+    vols,
+    correlations,
+    rate
+  )
 
   val nSims = (1 << 16) - 1
 

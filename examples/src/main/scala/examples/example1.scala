@@ -33,13 +33,13 @@ val settle = expiry.plusDays(2)
 val europeanCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(s / s0 - 1, 0), settle)
+  _ <- cashflow(max(s / s0 - 1, 0), Ccy.USD, settle)
 yield ()
 
 val europeanPut = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0), settle)
+  _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, settle)
 yield ()
 
 val bermudanPut = for
@@ -47,10 +47,12 @@ val bermudanPut = for
   _ <- List(90, 180, 270, 360)
     .map(refTime.plusDays)
     .traverse_(d =>
-      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0), d))
+      spot("AAPL", d).flatMap(s =>
+        exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0), Ccy.USD, d)
+      )
     )
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0), settle)
+  _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, settle)
 yield ()
 
 val europeanUpAndOutCall = for
@@ -62,7 +64,7 @@ val europeanUpAndOutCall = for
       Map("AAPL" -> List((expiry, 1.2 * s0)))
     )
   )
-  _ <- cashflow(p * max(s / s0 - 1, 0.0), settle)
+  _ <- cashflow(p * max(s / s0 - 1, 0.0), Ccy.USD, settle)
 yield ()
 
 val worstOfContinuousDownAndInPut = for
@@ -80,7 +82,7 @@ val worstOfContinuousDownAndInPut = for
       to = expiry
     )
   )
-  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), Ccy.USD, settle)
 yield ()
 
 val worstOfEuropeanDownAndInPut = for
@@ -100,7 +102,7 @@ val worstOfEuropeanDownAndInPut = for
       )
     )
   )
-  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), Ccy.USD, settle)
 yield ()
 
 val barrierReverseConvertible =
@@ -125,8 +127,12 @@ val barrierReverseConvertible =
         to = expiry
       )
     )
-    _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- couponTimes.traverse_(t => cashflow(5.0, Ccy.USD, t))
+    _ <- cashflow(
+      100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))),
+      Ccy.USD,
+      settle
+    )
   yield ()
 
 val callableBarrierReverseConvertible =
@@ -152,9 +158,13 @@ val callableBarrierReverseConvertible =
         to = expiry
       )
     )
-    _ <- callTimes.traverse_(t => callable(100.0.some, t))
-    _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- callTimes.traverse_(t => callable(100.0.some, Ccy.USD, t))
+    _ <- couponTimes.traverse_(t => cashflow(5.0, Ccy.USD, t))
+    _ <- cashflow(
+      100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))),
+      Ccy.USD,
+      settle
+    )
   yield ()
 
 @main def run: Unit =
@@ -166,16 +176,16 @@ val callableBarrierReverseConvertible =
 
   val dirNums = Sobol.directionNumbers(5000).toTry.get
 
-  val sim: Simulator[java.time.Instant] =
-    Simulator.blackScholes(
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      correlations,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    Ccy.USD,
+    spots,
+    vols,
+    correlations,
+    rate
+  )
 
   val nSims = (1 << 15) - 1
 

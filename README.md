@@ -27,7 +27,7 @@ val settle = expiry.plusDays(2)
 val europeanCall = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(s / s0 - 1, 0.0), settle)
+  _ <- cashflow(max(s / s0 - 1, 0.0), Ccy.USD, settle)
 yield ()
 
 val europeanUpAndOutCall = for
@@ -39,13 +39,13 @@ val europeanUpAndOutCall = for
       Map("AAPL" -> List((expiry, 1.5 * s0)))
     )
   )
-  _ <- cashflow(p * max(s / s0 - 1, 0.0), settle)
+  _ <- cashflow(p * max(s / s0 - 1, 0.0), Ccy.USD, settle)
 yield ()
 
 val europeanPut = for
   s0 <- spot("AAPL", refTime)
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0.0), settle)
+  _ <- cashflow(max(1 - s / s0, 0.0), Ccy.USD, settle)
 yield ()
 
 val bermudanPut = for
@@ -53,10 +53,18 @@ val bermudanPut = for
   _ <- List(90, 180, 270, 360)
     .map(refTime.plusDays)
     .traverse_(d =>
-      spot("AAPL", d).flatMap(s => exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0.0), d))
+      spot("AAPL", d).flatMap(s =>
+        exercisable(max(1 - s / s0, 0.0).some.filter(_ > 0.0), Ccy.USD, d)
+      )
     )
   s <- spot("AAPL", expiry)
-  _ <- cashflow(max(1 - s / s0, 0.0), settle)
+  _ <- cashflow(max(1 - s / s0, 0.0), Ccy.USD, settle)
+yield ()
+
+val quantoEuropeanCall = for
+  s0 <- spot("AAPL", refTime)
+  s <- spot("AAPL", expiry)
+  _ <- cashflow(max(s / s0 - 1, 0.0), Ccy.EUR, settle)
 yield ()
 
 val worstOfContinuousDownAndInPut = for
@@ -74,7 +82,7 @@ val worstOfContinuousDownAndInPut = for
       to = expiry
     )
   )
-  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), Ccy.USD, settle)
 yield ()
 
 val worstOfEuropeanDownAndInPut = for
@@ -94,7 +102,7 @@ val worstOfEuropeanDownAndInPut = for
       )
     )
   )
-  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), settle)
+  _ <- cashflow(p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0)), Ccy.USD, settle)
 yield ()
 
 val barrierReverseConvertible =
@@ -119,8 +127,12 @@ val barrierReverseConvertible =
         to = expiry
       )
     )
-    _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- couponTimes.traverse_(t => cashflow(5.0, Ccy.USD, t))
+    _ <- cashflow(
+      100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))),
+      Ccy.USD,
+      settle
+    )
   yield ()
 
 val callableBarrierReverseConvertible =
@@ -146,29 +158,61 @@ val callableBarrierReverseConvertible =
         to = expiry
       )
     )
-    _ <- callTimes.traverse_(t => callable(100.0.some, t))
-    _ <- couponTimes.traverse_(t => cashflow(5.0, t))
-    _ <- cashflow(100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))), settle)
+    _ <- callTimes.traverse_(t => callable(100.0.some, Ccy.USD, t))
+    _ <- couponTimes.traverse_(t => cashflow(5.0, Ccy.USD, t))
+    _ <- cashflow(
+      100 * (1 - p * max(0.0, 1 - min(s1 / s1_0, s2 / s2_0, s3 / s3_0))),
+      Ccy.USD,
+      settle
+    )
   yield ()
 
 // let's price using a simple Black-Scholes model
 
-val spots = Map("AAPL" -> 195.0, "MSFT" -> 370.0, "GOOG" -> 135.0)
-val vols = Map("AAPL" -> 0.23.vol, "MSFT" -> 0.25.vol, "GOOG" -> 0.29.vol)
-val correlations = Map(("AAPL", "MSFT") -> 0.7, ("AAPL", "GOOG") -> 0.6, ("MSFT", "GOOG") -> 0.65)
-val rate = 0.05.rate
+val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
+
+val aapl = models.blackscholes.Asset(
+  "AAPL",
+  Ccy.USD,
+  Forward(195.0, divs = Nil, discount = discount, borrow = YieldCurve.zero),
+  0.23.vol
+)
+
+val msft = models.blackscholes.Asset(
+  "MSFT",
+  Ccy.USD,
+  Forward(370.0, divs = Nil, discount = discount, borrow = YieldCurve.zero),
+  0.25.vol
+)
+
+val goog = models.blackscholes.Asset(
+  "GOOG",
+  Ccy.USD,
+  Forward(135.0, divs = Nil, discount = discount, borrow = YieldCurve.zero),
+  0.29.vol
+)
+
+val correlations =
+  Map(
+    ("AAPL", "MSFT") -> 0.7,
+    ("AAPL", "GOOG") -> 0.6,
+    ("MSFT", "GOOG") -> 0.65,
+    ("EURUSD", "AAPL") -> -0.2
+  )
+
+// for quantos
+val fxVols = Map(CcyPair(Ccy.EUR, Ccy.USD) -> 0.07.vol)
 
 val dirNums = Sobol.directionNumbers(10000).toTry.get
 
-val sim: Simulator[java.time.Instant] =
-Simulator.blackScholes(
+val sim = models.blackscholes.simulator(
   TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
   NormalGen.Factory.sobol(dirNums),
   refTime,
-  spots,
-  vols,
+  List(aapl, msft, goog),
   correlations,
-  rate
+  discount,
+  fxVols,
 )
 
 // the number of Monte Carlo simulations
@@ -201,23 +245,26 @@ bermudanPut.putProbabilities(sim, nSims)
 //   )
 // )
 
+quantoEuropeanCall.fairValue(sim, nSims)
+// res5: Either[Error, PV] = Right(value = 0.11372366271297153)
+
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
-// res5: Either[Error, PV] = Right(value = 0.11952007594500867)
+// res6: Either[Error, PV] = Right(value = 0.11952007594500867)
 
 // should be cheaper than continuous barrier
 worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
-// res6: Either[Error, PV] = Right(value = 0.09498951398431003)
+// res7: Either[Error, PV] = Right(value = 0.09498951398431003)
 
 barrierReverseConvertible.fairValue(sim, nSims)
-// res7: Either[Error, PV] = Right(value = 106.09836341818976)
+// res8: Either[Error, PV] = Right(value = 106.09836341818976)
 
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res8: Either[Error, PV] = Right(value = 105.49635516689791)
+// res9: Either[Error, PV] = Right(value = 105.49635516689791)
 
 // what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
-// res9: Either[Error, Map[Instant, Double]] = Right(
+// res10: Either[Error, Map[Instant, Double]] = Right(
 //   value = Map(
 //     2024-09-22T18:00:00Z -> 0.15909298989837337,
 //     2024-03-26T18:00:00Z -> 0.00173955504013184,

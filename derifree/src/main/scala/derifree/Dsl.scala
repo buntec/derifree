@@ -48,10 +48,10 @@ trait Dsl[T]:
 
   sealed trait RVA[A]
   case class Spot(ticker: String, time: T) extends RVA[Double]
-  case class Cashflow(amount: Double, time: T) extends RVA[PV]
+  case class Cashflow(amount: Double, ccy: Ccy, time: T) extends RVA[PV]
   case class HitProb(barrier: Barrier) extends RVA[Double]
-  case class Puttable(amount: Option[Double], time: T) extends RVA[Unit]
-  case class Callable(amount: Option[Double], time: T) extends RVA[Unit]
+  case class Puttable(amount: Option[Double], ccy: Ccy, time: T) extends RVA[Unit]
+  case class Callable(amount: Option[Double], ccy: Ccy, time: T) extends RVA[Unit]
 
   /** A random variable measurable with respect to a simulation. */
   type RV[A] = Free[RVA, A]
@@ -63,8 +63,8 @@ trait Dsl[T]:
   def spot(ticker: String, time: T): RV[Double] =
     liftF[RVA, Double](Spot(ticker, time))
 
-  def cashflow(amount: Double, time: T): RV[PV] =
-    liftF[RVA, PV](Cashflow(amount, time))
+  def cashflow(amount: Double, ccy: Ccy, time: T): RV[PV] =
+    liftF[RVA, PV](Cashflow(amount, ccy, time))
 
   def hitProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier))
@@ -72,15 +72,15 @@ trait Dsl[T]:
   def survivalProb(barrier: Barrier): RV[Double] =
     liftF[RVA, Double](HitProb(barrier)).map(1 - _)
 
-  def puttable(amount: Option[Double], time: T): RV[Unit] =
-    liftF[RVA, Unit](Puttable(amount, time))
+  def puttable(amount: Option[Double], ccy: Ccy, time: T): RV[Unit] =
+    liftF[RVA, Unit](Puttable(amount, ccy, time))
 
   /** Alias for `puttable`. */
-  def exercisable(amount: Option[Double], time: T): RV[Unit] =
-    liftF[RVA, Unit](Puttable(amount, time))
+  def exercisable(amount: Option[Double], ccy: Ccy, time: T): RV[Unit] =
+    liftF[RVA, Unit](Puttable(amount, ccy, time))
 
-  def callable(amount: Option[Double], time: T): RV[Unit] =
-    liftF[RVA, Unit](Callable(amount, time))
+  def callable(amount: Option[Double], ccy: Ccy, time: T): RV[Unit] =
+    liftF[RVA, Unit](Callable(amount, ccy, time))
 
   // def min[A: Ordering](as: A*): A = as.min
   def min[A: Ordering](a1: A, a2: A): A = if Ordering[A].lteq(a1, a2) then a1 else a2

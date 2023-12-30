@@ -47,16 +47,16 @@ class AmericanVanillaSuite extends munit.FunSuite:
       val vols = Map(udl -> 0.2.vol)
       val rate = 0.08.rate
 
-      val sim: Simulator[YearFraction] =
-        Simulator.blackScholes(
-          TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-          NormalGen.Factory.sobol(dirNums),
-          refTime,
-          spots,
-          vols,
-          Map.empty,
-          rate
-        )
+      val sim = models.blackscholes.simulator(
+        TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+        NormalGen.Factory.sobol(dirNums),
+        refTime,
+        Ccy.USD,
+        spots,
+        vols,
+        Map.empty,
+        rate
+      )
 
       val expiry = YearFraction.oneYear / 4
       val strike = 100.0
@@ -65,7 +65,7 @@ class AmericanVanillaSuite extends munit.FunSuite:
 
       val europeanPut = for
         s <- spot(udl, expiry)
-        _ <- cashflow(max(strike - s, 0.0), expiry)
+        _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
       yield ()
 
       val americanPut =
@@ -77,10 +77,10 @@ class AmericanVanillaSuite extends munit.FunSuite:
             .drop(1)
             .traverse(t =>
               spot(udl, t).flatMap(s_t =>
-                puttable(max(strike - s_t, 0.0).some.filter(_ > 0), t)
+                puttable(max(strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
               )
             )
-          _ <- cashflow(max(strike - s, 0.0), expiry)
+          _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
         yield ()
 
       val euPrice = europeanPut.fairValue(sim, nSims).toTry.get

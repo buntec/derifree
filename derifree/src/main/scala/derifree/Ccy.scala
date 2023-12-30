@@ -16,20 +16,24 @@
 
 package derifree
 
-import derifree.Simulation.Realization
-import derifree.Simulation.Spec
-
-import scala.collection.View
-
-trait Simulator[T]:
-
-  def apply(
-      spec: Simulation.Spec[T],
-      offset: Int
-  ): Either[derifree.Error, View[Simulation.Realization[T]]]
-
-  def refTime: T
-
-object Simulator:
-
-  case class Error(message: String) extends derifree.Error(message)
+// TODO: generate from list of ISO codes
+enum Ccy:
+  case AUD
+  case BRL
+  case CHF
+  case CNY
+  case EUR
+  case GBP
+  case HUF
+  case ILS
+  case INR
+  case JPY
+  case MXN
+  case NOK
+  case NZD
+  case PLN
+  case SEK
+  case SGD
+  case TRY
+  case TWD
+  case USD

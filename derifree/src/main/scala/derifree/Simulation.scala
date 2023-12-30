@@ -19,6 +19,7 @@ package derifree
 object Simulation:
 
   case class Spec[T](
+      ccy: Ccy,
       spotObs: Map[String, Set[T]],
       discountObs: Set[T],
       putTimes: Set[T],

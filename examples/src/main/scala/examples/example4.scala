@@ -33,14 +33,14 @@ val europeanPut =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(1 - s / s0, 0), expiry)
+    _ <- cashflow(max(1 - s / s0, 0), Ccy.USD, expiry)
   yield ()
 
 val europeanCall =
   for
     s0 <- spot(udl, refTime)
     s <- spot(udl, expiry)
-    _ <- cashflow(max(s / s0 - 1, 0), expiry)
+    _ <- cashflow(max(s / s0 - 1, 0), Ccy.USD, expiry)
   yield ()
 
 @main def run: Unit =
@@ -51,19 +51,19 @@ val europeanCall =
   val divs = Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
   val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
   val borrow = YieldCurve.zero[YearFraction]
-  val forwards = Map(udl -> Forward(spot, divs, discount, borrow))
-  val vols = Map(udl -> vol)
+  val assets = List(
+    models.blackscholes.Asset(udl, Ccy.USD, Forward(spot, divs, discount, borrow), vol)
+  )
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      forwards,
-      vols,
-      Map.empty,
-      discount
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    assets,
+    Map.empty,
+    discount,
+    Map.empty
+  )
 
   val nSims = (1 << 15) - 1
 
