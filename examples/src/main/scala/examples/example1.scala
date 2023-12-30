@@ -176,16 +176,15 @@ val callableBarrierReverseConvertible =
 
   val dirNums = Sobol.directionNumbers(5000).toTry.get
 
-  val sim: Simulator[java.time.Instant] =
-    Simulator.blackScholes(
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      correlations,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    spots,
+    vols,
+    correlations,
+    rate
+  )
 
   val nSims = (1 << 15) - 1
 

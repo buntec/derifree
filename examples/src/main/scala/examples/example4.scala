@@ -54,16 +54,15 @@ val europeanCall =
   val forwards = Map(udl -> Forward(spot, divs, discount, borrow))
   val vols = Map(udl -> vol)
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      forwards,
-      vols,
-      Map.empty,
-      discount
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    forwards,
+    vols,
+    Map.empty,
+    discount
+  )
 
   val nSims = (1 << 15) - 1
 

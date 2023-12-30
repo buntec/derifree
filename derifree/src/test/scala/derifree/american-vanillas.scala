@@ -47,16 +47,15 @@ class AmericanVanillaSuite extends munit.FunSuite:
       val vols = Map(udl -> 0.2.vol)
       val rate = 0.08.rate
 
-      val sim: Simulator[YearFraction] =
-        Simulator.blackScholes(
-          TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-          NormalGen.Factory.sobol(dirNums),
-          refTime,
-          spots,
-          vols,
-          Map.empty,
-          rate
-        )
+      val sim = models.blackscholes.simulator(
+        TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+        NormalGen.Factory.sobol(dirNums),
+        refTime,
+        spots,
+        vols,
+        Map.empty,
+        rate
+      )
 
       val expiry = YearFraction.oneYear / 4
       val strike = 100.0

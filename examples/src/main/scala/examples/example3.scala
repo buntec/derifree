@@ -60,16 +60,15 @@ val americanPut =
   val vols = Map(udl -> 0.30.vol)
   val rate = 0.05.rate
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      Map.empty,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    spots,
+    vols,
+    Map.empty,
+    rate
+  )
 
   val nSims = (1 << 15) - 1
 

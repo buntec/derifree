@@ -53,16 +53,15 @@ yield ()
   val correlations = Map(("AAPL", "META") -> 0.7)
   val rate = 0.04.rate
 
-  val sim: Simulator[YearFraction] =
-    Simulator.blackScholes[YearFraction](
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      NormalGen.Factory.sobol(dirNums),
-      refTime,
-      spots,
-      vols,
-      correlations,
-      rate
-    )
+  val sim = models.blackscholes.simulator(
+    TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
+    NormalGen.Factory.sobol(dirNums),
+    refTime,
+    spots,
+    vols,
+    correlations,
+    rate
+  )
 
   val nSims = (1 << 16) - 1
 
