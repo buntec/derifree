@@ -20,6 +20,9 @@ ThisBuild / developers := List(
 
 ThisBuild / tlFatalWarnings := false
 
+// we need at least java 11 for ejml
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
+
 lazy val V = new {
   val cats = "2.10.0"
   val catsTime = "0.5.1"
