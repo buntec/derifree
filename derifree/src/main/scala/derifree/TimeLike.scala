@@ -28,7 +28,9 @@ trait TimeLike[T] extends Order[T]:
 
   def addDays(t: T, days: Int): T
 
-  def addSeconds(t: T, seconds: Int): T
+  def addSeconds(t: T, seconds: Long): T
+
+  def addMillis(t: T, millis: Long): T
 
 object TimeLike:
 
@@ -51,8 +53,11 @@ object TimeLike:
 
     def addDays(t: YearFraction, n: Int): YearFraction = t + YearFraction.oneDay * n
 
-    def addSeconds(t: YearFraction, seconds: Int): YearFraction =
+    def addSeconds(t: YearFraction, seconds: Long): YearFraction =
       t + YearFraction.oneSecond * seconds
+
+    def addMillis(t: YearFraction, millis: Long): YearFraction =
+      t + YearFraction.oneMilli * millis
 
   given TimeLike[java.time.Instant] =
     new TimeLike[java.time.Instant]:
@@ -77,8 +82,11 @@ object TimeLike:
 
       def addDays(t: Instant, n: Int): Instant = t.plus(java.time.Duration.ofDays(n))
 
-      def addSeconds(t: Instant, seconds: Int): Instant =
+      def addSeconds(t: Instant, seconds: Long): Instant =
         t.plus(java.time.Duration.ofSeconds(seconds))
+
+      def addMillis(t: Instant, millis: Long): Instant =
+        t.plus(java.time.Duration.ofMillis(millis))
 
 trait TimeLikeSyntax:
 
@@ -88,4 +96,7 @@ trait TimeLikeSyntax:
     def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
     def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
     def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
-    def plusSeconds(n: Int): T = TimeLike[T].addSeconds(t, n)
+    def plusSeconds(n: Long): T = TimeLike[T].addSeconds(t, n)
+    def plusMillis(n: Long): T = TimeLike[T].addMillis(t, n)
+    def plusYearFraction(yf: YearFraction): T =
+      TimeLike[T].addMillis(t, math.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))

@@ -69,6 +69,7 @@ object YearFraction:
   def apply(t: Double): YearFraction = t
 
   val zero = YearFraction(0.0)
+  val oneMilli = YearFraction(1.0 / 365 / 24 / 60 / 60 / 1000)
   val oneSecond = YearFraction(1.0 / 365 / 24 / 60 / 60)
   val oneMinute = YearFraction(1.0 / 365 / 24 / 60)
   val oneHour = YearFraction(1.0 / 365 / 24)
