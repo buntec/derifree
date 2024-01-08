@@ -3,6 +3,7 @@ package example5
 
 import derifree.*
 import derifree.syntax.*
+import derifree.fd.SpatialGrid
 
 @main def run: Unit =
   val refTime = YearFraction.zero
@@ -16,15 +17,20 @@ import derifree.syntax.*
 
   val payout = (s: Double) => math.max(0.0, s / spot - 1)
 
+  val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
+  val sgFactory = SpatialGrid.Factory.logSinh(100, 0.01, spot)
+
   val solution = fd.feynmankac.blackScholes(
     forward,
     discount,
     vol,
     expiry,
     payout,
+    refTime,
     fd.BoundaryCondition.Linear,
     fd.BoundaryCondition.Linear,
-    refTime
+    tgFactory,
+    sgFactory
   )
 
   println(solution)

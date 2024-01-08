@@ -4,7 +4,18 @@ package fd
 import org.apache.commons.math3.util.{FastMath => math}
 import scala.collection.immutable.ArraySeq
 
-object spatialgrid:
+object SpatialGrid:
+  self =>
+
+  trait Factory:
+
+    def apply(min: Double, max: Double): ArraySeq[Double]
+
+  object Factory:
+
+    def logSinh(n: Int, concentration: Double, x0: Double): Factory = new Factory:
+      def apply(min: Double, max: Double): ArraySeq[Double] =
+        self.logSinh(min, max, n, concentration, x0)
 
   enum SpatialDimension:
     case Spot, LogSpot

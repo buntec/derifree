@@ -13,13 +13,15 @@ object feynmankac:
       vol: Double,
       expiry: T,
       payout: Double => Double,
+      refTime: T,
       lowerBoundary: BoundaryCondition,
       upperBoundary: BoundaryCondition,
-      refTime: T
+      timeGridFactory: TimeGrid.Factory,
+      spatialGridFactory: SpatialGrid.Factory
   ): Double =
     val specialTimes = expiry :: forward.dividends.map(_.exDiv)
     val specialYfs = specialTimes.map(t => refTime.yearFractionTo(t)).toSet
-    val timegrid = TimeGrid.almostEquidistant(YearFraction.oneDay, specialYfs)
+    val timegrid = timeGridFactory(specialYfs)
     val tMax = specialYfs.max
 
     val divsByIndex = forward.dividends
@@ -36,20 +38,20 @@ object feynmankac:
     val sMin =
       lowerBoundary match
         case BoundaryCondition.Linear =>
-          s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
+          s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
         case BoundaryCondition.Dirichlet(spot, _) =>
           spot
 
     val sMax = upperBoundary match
       case BoundaryCondition.Linear =>
-        s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
+        s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
       case BoundaryCondition.Dirichlet(spot, _) =>
         spot
 
     val ts = timegrid.yearFractions
     val tEps = TimeGrid.tickSize
 
-    val initialGrid = spatialgrid.logSinh(sMin, sMax, 50, 0.01, s0)
+    val initialGrid = spatialGridFactory(sMin, sMax)
     val initialInteriorPoints = initialGrid.slice(1, initialGrid.length - 1)
     val initialValues = initialInteriorPoints.map(payout)
 
@@ -64,13 +66,66 @@ object feynmankac:
             val r = -math.log(discount.discountFactor(t1, t2)) / dt
             val mu = math.log(forward(t2) / forward(t1)) / dt
 
-            val n = grid.length - 2 // number of interior points
-            val interiorPoints = grid.slice(1, n + 1)
-
-            val gridNext =
+            val (gridNext, v2Minus) =
               divsByIndex
                 .get(i)
-                .fold(grid)(div => grid.map(s => (s + div.cash) / (1 - div.prop)))
+                .fold((grid, v2)): div =>
+                  (lowerBoundary, upperBoundary) match
+                    case (BoundaryCondition.Linear, BoundaryCondition.Linear) =>
+                      grid.map(s => (s + div.cash) / (1 - div.prop)) -> v2
+
+                    case (
+                          BoundaryCondition.Dirichlet(lowerBound, value),
+                          BoundaryCondition.Linear
+                        ) =>
+                      val newGrid = spatialGridFactory(sMin, (sMax + div.cash) / (1 - div.prop))
+                      val interp =
+                        interpolation.naturalCubicSpline(
+                          grid.slice(0, grid.length - 1),
+                          value +: v2
+                        )
+                      newGrid -> newGrid
+                        .slice(1, newGrid.length - 1)
+                        .map(s =>
+                          if s <= lowerBound then value
+                          else interp(s * (1 - div.prop) - div.cash)
+                        )
+
+                    case (
+                          BoundaryCondition.Linear,
+                          BoundaryCondition.Dirichlet(upperBound, value)
+                        ) =>
+                      val newGrid = spatialGridFactory(
+                        (sMin + div.cash) / (1 - div.prop),
+                        sMax
+                      )
+                      val interp =
+                        interpolation.naturalCubicSpline(
+                          grid.slice(1, grid.length),
+                          v2 :+ value
+                        )
+                      newGrid -> newGrid
+                        .slice(1, newGrid.length - 1)
+                        .map(s =>
+                          if s >= upperBound then value
+                          else interp(s * (1 - div.prop) - div.cash)
+                        )
+
+                    case (
+                          BoundaryCondition.Dirichlet(lowerBound, value1),
+                          BoundaryCondition.Dirichlet(upperBound, value2)
+                        ) =>
+                      val interp =
+                        interpolation.naturalCubicSpline(grid, value1 +: v2 :+ value2)
+                      grid -> grid
+                        .slice(1, grid.length - 1)
+                        .map(s =>
+                          if s <= lowerBound then value1
+                          else if s >= upperBound then value2
+                          else interp(s * (1 - div.prop) - div.cash)
+                        )
+
+            val interiorPoints = gridNext.slice(1, gridNext.length - 1)
 
             val reaction = interiorPoints.map(_ => r)
             val convection = interiorPoints.map(_ * mu)
@@ -82,10 +137,10 @@ object feynmankac:
             val v1 =
               if j < 2 then
                 // Rannacher smoothing
-                op.implicitStep(op.implicitStep(v2, 0.5 * dt), 0.5 * dt)
+                op.implicitStep(op.implicitStep(v2Minus, 0.5 * dt), 0.5 * dt)
               else
                 // Crank-Nicolson
-                op.thetaStep(v2, dt, 0.5)
+                op.thetaStep(v2Minus, dt, 0.5)
 
             (gridNext, v1)
 
