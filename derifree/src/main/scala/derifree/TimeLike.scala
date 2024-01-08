@@ -24,13 +24,18 @@ trait TimeLike[T] extends Order[T]:
 
   def yearFractionBetween(x: T, y: T): YearFraction
 
-  def dailyStepsBetween(start: T, stop: T): List[T]
-
-  def addDays(t: T, days: Int): T
-
-  def addSeconds(t: T, seconds: Long): T
-
   def addMillis(t: T, millis: Long): T
+
+  final def addSeconds(t: T, seconds: Long): T = addMillis(t, seconds * 1000)
+
+  final def addMinutes(t: T, minutes: Long): T = addSeconds(t, minutes * 60L)
+
+  final def addHours(t: T, hours: Long): T = addMinutes(t, hours * 60L)
+
+  final def addDays(t: T, days: Int): T = addHours(t, days * 24L)
+
+  final def dailyStepsBetween(start: T, stop: T): List[T] =
+    List.unfold(addDays(start, 1))(s => if lt(s, stop) then Some((s, addDays(s, 1))) else None)
 
 object TimeLike:
 
@@ -43,18 +48,6 @@ object TimeLike:
 
     def yearFractionBetween(x: YearFraction, y: YearFraction): YearFraction =
       y - x
-
-    def dailyStepsBetween(
-        start: YearFraction,
-        stop: YearFraction
-    ): List[YearFraction] =
-      val dt = YearFraction.oneDay
-      List.unfold(start + dt)(s => if s < stop then Some((s, s + dt)) else None)
-
-    def addDays(t: YearFraction, n: Int): YearFraction = t + YearFraction.oneDay * n
-
-    def addSeconds(t: YearFraction, seconds: Long): YearFraction =
-      t + YearFraction.oneSecond * seconds
 
     def addMillis(t: YearFraction, millis: Long): YearFraction =
       t + YearFraction.oneMilli * millis
@@ -73,17 +66,6 @@ object TimeLike:
             .between(x, y)
             .toMillis / (1000.0 * 60 * 60 * 24 * 365)
         )
-
-      def dailyStepsBetween(start: Instant, stop: Instant): List[Instant] =
-        val dt = java.time.Duration.ofDays(1)
-        List.unfold(start.plus(dt))(s =>
-          if s.isBefore(stop) then Some((s, s.plus(dt))) else None
-        )
-
-      def addDays(t: Instant, n: Int): Instant = t.plus(java.time.Duration.ofDays(n))
-
-      def addSeconds(t: Instant, seconds: Long): Instant =
-        t.plus(java.time.Duration.ofSeconds(seconds))
 
       def addMillis(t: Instant, millis: Long): Instant =
         t.plus(java.time.Duration.ofMillis(millis))

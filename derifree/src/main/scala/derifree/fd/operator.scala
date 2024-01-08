@@ -3,14 +3,48 @@ package fd
 
 import scala.collection.immutable.ArraySeq
 
-object operator:
+trait Operator:
 
-  def withLinearityBoundaryCondition(
+  def a: TridiagMatrix
+
+  def omega: (Double, Double)
+
+  def size: Int
+
+  def explicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
+    val ud = a.upperDiagonal.map(_ * dt)
+    val ld = a.lowerDiagonal.map(_ * dt)
+    val d = a.diagonal.map(1.0 + dt * _)
+    val a0 = TridiagMatrix(ld, d, ud)
+    val result = a0.multiply(v)
+    val underlying = result.unsafeArray.asInstanceOf[Array[Double]]
+    underlying(0) += dt * omega(0)
+    underlying(size - 1) += dt * omega(1)
+    result
+
+  def implicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
+    val ud = a.upperDiagonal.map(_ * -dt)
+    val ld = a.lowerDiagonal.map(_ * -dt)
+    val d = a.diagonal.map(1.0 - dt * _)
+    val op = TridiagMatrix(ld, d, ud)
+    val v0 = v.toArray[Double]
+    v0(0) += dt * omega(0)
+    v0(size - 1) += dt * omega(1)
+    op.solve(ArraySeq.unsafeWrapArray(v0))
+
+  def thetaStep(v: ArraySeq[Double], dt: Double, theta: Double) =
+    implicitStep(explicitStep(v, theta * dt), (1 - theta) * dt)
+
+object Operator:
+
+  def apply(
       grid: ArraySeq[Double],
       convection: ArraySeq[Double],
       diffusion: ArraySeq[Double],
-      reaction: ArraySeq[Double]
-  ): TridiagMatrix =
+      reaction: ArraySeq[Double],
+      upperBoundary: BoundaryCondition,
+      lowerBoundary: BoundaryCondition
+  ): Operator =
     val n = grid.length - 2 // number of interior points
     require(
       convection.length == n && diffusion.length == n && reaction.length == n,
@@ -30,17 +64,40 @@ object operator:
       upperDiag(i) = (convection(i) * dxDown + 2.0 * diffusion(i)) / (dxUp * (dxUp + dxDown))
       i += 1
     }
-    var dxUp = grid(2) - grid(1)
-    var dxDown = grid(1) - grid(0)
-    diag(0) += lowerDiag(0) * (dxUp + dxDown) / dxUp
-    upperDiag(0) += lowerDiag(0) * (-dxDown / dxUp)
-    dxUp = grid(n + 1) - grid(n)
-    dxDown = grid(n) - grid(n - 1)
-    diag(n - 1) += upperDiag(n - 1) * (dxUp + dxDown) / dxDown
-    lowerDiag(n - 1) += upperDiag(n - 1) * (-dxUp / dxDown)
 
-    TridiagMatrix(
-      ArraySeq.unsafeWrapArray(lowerDiag),
-      ArraySeq.unsafeWrapArray(diag),
-      ArraySeq.unsafeWrapArray(upperDiag)
-    )
+    lowerBoundary match
+      case BoundaryCondition.Linear =>
+        val dxUp = grid(2) - grid(1)
+        val dxDown = grid(1) - grid(0)
+        val lambda1 = (dxUp + dxDown) / dxUp
+        val lambda2 = -dxDown / dxUp
+        diag(0) += lambda1 * lowerDiag(0)
+        upperDiag(0) += lambda2 * lowerDiag(0)
+      case BoundaryCondition.Dirichlet(spot, value) => ()
+
+    upperBoundary match
+      case BoundaryCondition.Linear =>
+        val dxUp = grid(n + 1) - grid(n)
+        val dxDown = grid(n) - grid(n - 1)
+        val lambda1 = (dxUp + dxDown) / dxDown
+        val lambda2 = -dxUp / dxDown
+        diag(n - 1) += lambda1 * upperDiag(n - 1)
+        lowerDiag(n - 1) += lambda2 * upperDiag(n - 1)
+      case BoundaryCondition.Dirichlet(spot, value) => ()
+
+    new Operator:
+      def size: Int = n
+      def a: TridiagMatrix = TridiagMatrix(
+        ArraySeq.unsafeWrapArray(lowerDiag),
+        ArraySeq.unsafeWrapArray(diag),
+        ArraySeq.unsafeWrapArray(upperDiag)
+      )
+      def omega = (
+        lowerBoundary match
+          case BoundaryCondition.Linear              => 0
+          case BoundaryCondition.Dirichlet(_, value) => lowerDiag(0) * value
+        ,
+        upperBoundary match
+          case BoundaryCondition.Linear              => 0
+          case BoundaryCondition.Dirichlet(_, value) => upperDiag(n - 1) * value
+      )

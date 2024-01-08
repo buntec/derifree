@@ -7,16 +7,18 @@ import scala.collection.immutable.ArraySeq
 
 object feynmankac:
 
-  def blackScholesWithLinearBoundaryConditions[T: TimeLike](
+  def blackScholes[T: TimeLike](
       forward: Forward[T],
       discount: YieldCurve[T],
       vol: Double,
       expiry: T,
       payout: Double => Double,
+      lowerBoundary: BoundaryCondition,
+      upperBoundary: BoundaryCondition,
       refTime: T
   ): Double =
     val specialTimes = expiry :: forward.dividends.map(_.exDiv)
-    val specialYfs = specialTimes.map(t => TimeLike[T].yearFractionBetween(refTime, t)).toSet
+    val specialYfs = specialTimes.map(t => refTime.yearFractionTo(t)).toSet
     val timegrid = TimeGrid.almostEquidistant(YearFraction.oneDay, specialYfs)
     val tMax = specialYfs.max
 
@@ -27,11 +29,22 @@ object feynmankac:
           d1.copy(cash = d1.cash + d2.cash, prop = d1.prop + d2.prop)
         )
       )
-      .map((t, div) => timegrid.indexOf(TimeLike[T].yearFractionBetween(refTime, t)).get -> div)
+      .map((t, div) => timegrid.indexOf(refTime.yearFractionTo(t)).get -> div)
 
     val s0 = forward.spot
-    val sMin = s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
-    val sMax = s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
+
+    val sMin =
+      lowerBoundary match
+        case BoundaryCondition.Linear =>
+          s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
+        case BoundaryCondition.Dirichlet(spot, _) =>
+          spot
+
+    val sMax = upperBoundary match
+      case BoundaryCondition.Linear =>
+        s0 * spatialgrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
+      case BoundaryCondition.Dirichlet(spot, _) =>
+        spot
 
     val ts = timegrid.yearFractions
     val tEps = TimeGrid.tickSize
@@ -41,31 +54,40 @@ object feynmankac:
     val initialValues = initialInteriorPoints.map(payout)
 
     val (finalGrid, finalValues) =
-      (ts zip (ts.zipWithIndex).tail).foldRight((initialGrid, initialValues)):
-        case ((yf1, (yf2, i)), (grid, v2)) =>
-          val dt = (yf2 - yf1).toDouble
-          val t1 = refTime.plusYearFraction(yf1 + tEps)
-          val t2 = refTime.plusYearFraction(yf2 - tEps)
+      (ts zip (ts.zipWithIndex).tail).reverse.zipWithIndex
+        .foldLeft((initialGrid, initialValues)):
+          case ((grid, v2), ((yf1, (yf2, i)), j)) =>
+            val dt = (yf2 - yf1).toDouble
+            val t1 = refTime.plusYearFraction(yf1 + tEps)
+            val t2 = refTime.plusYearFraction(yf2 - tEps)
 
-          val r = -math.log(discount.discountFactor(t1, t2)) / dt
-          val mu = math.log(forward(t2) / forward(t1)) / dt
-          // println(s"dt=$dt, t1=$t1, t2=$t2, r=$r, mu=$mu")
+            val r = -math.log(discount.discountFactor(t1, t2)) / dt
+            val mu = math.log(forward(t2) / forward(t1)) / dt
 
-          val n = grid.length - 2 // number of interior points
-          val interiorPoints = grid.slice(1, n + 1)
+            val n = grid.length - 2 // number of interior points
+            val interiorPoints = grid.slice(1, n + 1)
 
-          val gridNext =
-            divsByIndex.get(i).fold(grid)(div => grid.map(s => (s + div.cash) / (1 - div.prop)))
+            val gridNext =
+              divsByIndex
+                .get(i)
+                .fold(grid)(div => grid.map(s => (s + div.cash) / (1 - div.prop)))
 
-          val reaction = interiorPoints.map(_ => r)
-          val convection = interiorPoints.map(_ * mu)
-          val diffusion = interiorPoints.map(s => 0.5 * s * s * vol * vol)
+            val reaction = interiorPoints.map(_ => r)
+            val convection = interiorPoints.map(_ * mu)
+            val diffusion = interiorPoints.map(s => 0.5 * s * s * vol * vol)
 
-          val op =
-            operator.withLinearityBoundaryCondition(gridNext, convection, diffusion, reaction)
+            val op =
+              Operator(gridNext, convection, diffusion, reaction, upperBoundary, lowerBoundary)
 
-          val v1 = timestep.`implicit`(timestep.explicit(v2, 0.5 * dt, op), 0.5 * dt, op)
-          (gridNext, v1)
+            val v1 =
+              if j < 2 then
+                // Rannacher smoothing
+                op.implicitStep(op.implicitStep(v2, 0.5 * dt), 0.5 * dt)
+              else
+                // Crank-Nicolson
+                op.thetaStep(v2, dt, 0.5)
+
+            (gridNext, v1)
 
     val finalInteriorPoints = finalGrid.slice(1, finalGrid.length - 1)
     interpolation.naturalCubicSpline(finalInteriorPoints, finalValues)(s0)

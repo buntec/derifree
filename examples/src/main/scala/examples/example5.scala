@@ -16,12 +16,14 @@ import derifree.syntax.*
 
   val payout = (s: Double) => math.max(0.0, s / spot - 1)
 
-  val solution = fd.feynmankac.blackScholesWithLinearBoundaryConditions(
+  val solution = fd.feynmankac.blackScholes(
     forward,
     discount,
     vol,
     expiry,
     payout,
+    fd.BoundaryCondition.Linear,
+    fd.BoundaryCondition.Linear,
     refTime
   )
 
