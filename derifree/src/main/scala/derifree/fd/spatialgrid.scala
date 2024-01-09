@@ -77,3 +77,28 @@ object SpatialGrid:
     val x2 = grid(i)
     val alpha = antipoint - (x1 + x2) / 2.0
     grid.map(_ + alpha)
+
+  def addBoundaryValues(
+      grid: ArraySeq[Double],
+      interiorValues: ArraySeq[Double],
+      lowerBoundary: BoundaryCondition,
+      upperBoundary: BoundaryCondition
+  ): ArraySeq[Double] =
+    val n = grid.length - 2 // number of interior points
+    require(interiorValues.length == n, "dimension mismatch")
+    val vLeft = lowerBoundary match
+      case BoundaryCondition.Linear =>
+        val dxUp = grid(2) - grid(1)
+        val dxDown = grid(1) - grid(0)
+        (dxUp + dxDown) / dxUp * interiorValues(0) - dxDown / dxUp * interiorValues(1)
+      case BoundaryCondition.Dirichlet(_, value) => value
+    val vRight = upperBoundary match
+      case BoundaryCondition.Linear =>
+        val dxUp = grid(n + 1) - grid(n)
+        val dxDown = grid(n) - grid(n - 1)
+        (dxUp + dxDown) / dxDown * interiorValues(n - 1) - dxUp / dxDown * interiorValues(
+          n - 2
+        )
+      case BoundaryCondition.Dirichlet(_, value) =>
+        value
+    vLeft +: interiorValues :+ vRight

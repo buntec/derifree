@@ -18,7 +18,7 @@ import derifree.fd.SpatialGrid
   val payout = (s: Double) => math.max(0.0, s / spot - 1)
 
   val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
-  val sgFactory = SpatialGrid.Factory.logSinh(100, 0.01, spot)
+  val sgFactory = SpatialGrid.Factory.logSinh(100, 1, spot)
 
   val solution = fd.feynmankac.blackScholes(
     forward,
@@ -28,7 +28,9 @@ import derifree.fd.SpatialGrid
     payout,
     refTime,
     fd.BoundaryCondition.Linear,
+    // fd.BoundaryCondition.Dirichlet(50.0, 0),
     fd.BoundaryCondition.Linear,
+    // fd.BoundaryCondition.Dirichlet(100.000001, 100),
     tgFactory,
     sgFactory
   )

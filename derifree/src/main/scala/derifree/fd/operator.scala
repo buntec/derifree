@@ -11,6 +11,8 @@ trait Operator:
 
   def size: Int
 
+  // v are interior points
+  // returns interior points
   def explicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
     val ud = a.upperDiagonal.map(_ * dt)
     val ld = a.lowerDiagonal.map(_ * dt)
@@ -22,6 +24,8 @@ trait Operator:
     underlying(size - 1) += dt * omega(1)
     result
 
+  // v are interior points
+  // returns interior points
   def implicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
     val ud = a.upperDiagonal.map(_ * -dt)
     val ld = a.lowerDiagonal.map(_ * -dt)
@@ -87,11 +91,13 @@ object Operator:
 
     new Operator:
       def size: Int = n
+
       def a: TridiagMatrix = TridiagMatrix(
         ArraySeq.unsafeWrapArray(lowerDiag),
         ArraySeq.unsafeWrapArray(diag),
         ArraySeq.unsafeWrapArray(upperDiag)
       )
+
       def omega = (
         lowerBoundary match
           case BoundaryCondition.Linear              => 0

@@ -35,29 +35,27 @@ object feynmankac:
 
     val s0 = forward.spot
 
+    val pLower = s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
+    val pUpper = s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
+
     val sMin =
       lowerBoundary match
-        case BoundaryCondition.Linear =>
-          s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
-        case BoundaryCondition.Dirichlet(spot, _) =>
-          spot
+        case BoundaryCondition.Linear           => pLower
+        case BoundaryCondition.Dirichlet(lb, _) => math.max(pLower, lb)
 
     val sMax = upperBoundary match
-      case BoundaryCondition.Linear =>
-        s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
-      case BoundaryCondition.Dirichlet(spot, _) =>
-        spot
+      case BoundaryCondition.Linear           => pUpper
+      case BoundaryCondition.Dirichlet(lb, _) => math.min(pUpper, lb)
 
     val ts = timegrid.yearFractions
     val tEps = TimeGrid.tickSize
 
     val initialGrid = spatialGridFactory(sMin, sMax)
-    val initialInteriorPoints = initialGrid.slice(1, initialGrid.length - 1)
-    val initialValues = initialInteriorPoints.map(payout)
+    val initialInteriorValues = initialGrid.slice(1, initialGrid.length - 1).map(payout)
 
-    val (finalGrid, finalValues) =
+    val (finalGrid, finalInteriorValues) =
       (ts zip (ts.zipWithIndex).tail).reverse.zipWithIndex
-        .foldLeft((initialGrid, initialValues)):
+        .foldLeft((initialGrid, initialInteriorValues)):
           case ((grid, v2), ((yf1, (yf2, i)), j)) =>
             val dt = (yf2 - yf1).toDouble
             val t1 = refTime.plusYearFraction(yf1 + tEps)
@@ -81,8 +79,8 @@ object feynmankac:
                       val newGrid = spatialGridFactory(sMin, (sMax + div.cash) / (1 - div.prop))
                       val interp =
                         interpolation.naturalCubicSpline(
-                          grid.slice(0, grid.length - 1),
-                          value +: v2
+                          grid,
+                          SpatialGrid.addBoundaryValues(grid, v2, lowerBoundary, upperBoundary)
                         )
                       newGrid -> newGrid
                         .slice(1, newGrid.length - 1)
@@ -101,8 +99,8 @@ object feynmankac:
                       )
                       val interp =
                         interpolation.naturalCubicSpline(
-                          grid.slice(1, grid.length),
-                          v2 :+ value
+                          grid,
+                          SpatialGrid.addBoundaryValues(grid, v2, lowerBoundary, upperBoundary)
                         )
                       newGrid -> newGrid
                         .slice(1, newGrid.length - 1)
@@ -116,7 +114,10 @@ object feynmankac:
                           BoundaryCondition.Dirichlet(upperBound, value2)
                         ) =>
                       val interp =
-                        interpolation.naturalCubicSpline(grid, value1 +: v2 :+ value2)
+                        interpolation.naturalCubicSpline(
+                          grid,
+                          SpatialGrid.addBoundaryValues(grid, v2, lowerBoundary, upperBoundary)
+                        )
                       grid -> grid
                         .slice(1, grid.length - 1)
                         .map(s =>
@@ -144,5 +145,12 @@ object feynmankac:
 
             (gridNext, v1)
 
-    val finalInteriorPoints = finalGrid.slice(1, finalGrid.length - 1)
-    interpolation.naturalCubicSpline(finalInteriorPoints, finalValues)(s0)
+    val finalValues =
+      SpatialGrid.addBoundaryValues(
+        finalGrid,
+        finalInteriorValues,
+        lowerBoundary,
+        upperBoundary
+      )
+
+    interpolation.naturalCubicSpline(finalGrid, finalValues)(s0)
