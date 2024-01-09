@@ -17,9 +17,12 @@
 package derifree
 package payoffs
 
+import cats.syntax.all.*
 import derifree.fd.*
 
 case class EuropeanVanilla[T](
+    underlying: String,
+    ccy: Ccy,
     strike: Double,
     expiry: T,
     optionType: EuropeanVanilla.OptionType
@@ -30,7 +33,16 @@ object EuropeanVanilla:
   enum OptionType:
     case Call, Put
 
-  given priceable[T: TimeLike]: FD[EuropeanVanilla[T], T] =
+  given [T: TimeLike]: MC[EuropeanVanilla[T], T] =
+    new MC[EuropeanVanilla[T], T]:
+      def contingentClaim(a: EuropeanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+        import dsl.*
+        for
+          s <- spot(a.underlying, a.expiry)
+          _ <- cashflow(max(a.strike - s, 0.0), a.ccy, a.expiry)
+        yield ()
+
+  given [T: TimeLike]: FD[EuropeanVanilla[T], T] =
     new FD[EuropeanVanilla[T], T]:
       def lowerBoundary(a: EuropeanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
 

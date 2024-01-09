@@ -17,9 +17,12 @@
 package derifree
 package payoffs
 
+import cats.syntax.all.*
 import derifree.fd.*
 
 case class AmericanVanilla[T](
+    underlying: String,
+    ccy: Ccy,
     strike: Double,
     expiry: T,
     optionType: AmericanVanilla.OptionType
@@ -30,7 +33,26 @@ object AmericanVanilla:
   enum OptionType:
     case Call, Put
 
-  given priceable[T: TimeLike]: FD[AmericanVanilla[T], T] =
+  given [T: TimeLike]: MC[AmericanVanilla[T], T] =
+    new MC[AmericanVanilla[T], T]:
+      def contingentClaim(a: AmericanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+        val daysBetween = TimeLike[T].dailyStepsBetween(refTime, a.expiry)
+        import dsl.*
+        for
+          s <- spot(a.underlying, a.expiry)
+          _ <- daysBetween
+            .drop(1)
+            .traverse(t =>
+              dsl
+                .spot(a.underlying, t)
+                .flatMap(s_t =>
+                  puttable(max(a.strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
+                )
+            )
+          _ <- cashflow(max(a.strike - s, 0.0), a.ccy, a.expiry)
+        yield ()
+
+  given [T: TimeLike]: FD[AmericanVanilla[T], T] =
     new FD[AmericanVanilla[T], T]:
       def lowerBoundary(a: AmericanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
 

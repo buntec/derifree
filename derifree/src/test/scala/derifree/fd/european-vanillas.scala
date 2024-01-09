@@ -44,6 +44,8 @@ class EuropeanVanillaSuite extends munit.FunSuite:
 
   test("should be close to closed-form price"):
 
+    val udl = "ACME"
+    val ccy = Ccy.USD
     val refTime = YearFraction.zero
     val spot = 100.0
     val divs = Nil // Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
@@ -64,6 +66,8 @@ class EuropeanVanillaSuite extends munit.FunSuite:
 
           val payoff =
             payoffs.EuropeanVanilla(
+              udl,
+              ccy,
               strike,
               expiry,
               if c.isCall then payoffs.EuropeanVanilla.OptionType.Call

@@ -22,6 +22,9 @@ import derifree.fd.*
 import derifree.syntax.*
 
 @main def run: Unit =
+
+  val udl = "ACME"
+  val ccy = Ccy.USD
   val refTime = YearFraction.zero
   val expiry = YearFraction.oneYear
   val spot = 100.0
@@ -34,7 +37,8 @@ import derifree.syntax.*
   val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
   val sgFactory = SpatialGrid.Factory.logSinh(100, 1, spot)
 
-  val payoff = payoffs.EuropeanVanilla(spot, expiry, payoffs.EuropeanVanilla.OptionType.Call)
+  val payoff =
+    payoffs.EuropeanVanilla(udl, ccy, spot, expiry, payoffs.EuropeanVanilla.OptionType.Call)
 
   val priceFun = () =>
     fd.feynmankac.blackScholes(

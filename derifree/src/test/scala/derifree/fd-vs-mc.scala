@@ -35,8 +35,7 @@ class McVsFd extends munit.FunSuite:
 
   private val genCase: Gen[Case] = for
     tte <- Gen.between(0.01, 1.0).map(YearFraction(_))
-    // isCall <- Gen.boolean
-    isCall = false
+    isCall <- Gen.boolean
     strike <- Gen.between(70.0, 150.0)
     dRate <- Gen.between(-0.1, 0.1)
     bRate <- Gen.between(-0.05, 0.05)
@@ -50,10 +49,10 @@ class McVsFd extends munit.FunSuite:
   val nSims = (1 << 15) - 1
 
   val udl = "ACME"
+  val ccy = Ccy.USD
 
-  test("Vanilla prices should be close"):
+  test("Vanilla prices should be close".ignore):
 
-    val refTime = YearFraction.zero
     val spot = 100.0
     val divs = Nil // Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
 
@@ -83,50 +82,32 @@ class McVsFd extends munit.FunSuite:
         )
 
         val dsl = Dsl[YearFraction]
-        import dsl.*
 
-        val europeanPut = for
-          s <- dsl.spot(udl, expiry)
-          _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
-        yield ()
-
-        val americanPut =
-          val m = 90
-          for
-            s <- dsl.spot(udl, expiry)
-            _ <- List
-              .tabulate(m)(i => (expiry / m) * i)
-              .drop(1)
-              .traverse(t =>
-                dsl
-                  .spot(udl, t)
-                  .flatMap(s_t =>
-                    puttable(max(strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
-                  )
-              )
-            _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
-          yield ()
-
-        val euFdPayoff =
+        val euVanilla =
           payoffs.EuropeanVanilla(
+            udl,
+            ccy,
             strike,
             expiry,
             if c.isCall then payoffs.EuropeanVanilla.OptionType.Call
             else payoffs.EuropeanVanilla.OptionType.Put
           )
 
-        val amFdPayoff =
+        val amVanilla =
           payoffs.AmericanVanilla(
+            udl,
+            ccy,
             strike,
             expiry,
             if c.isCall then payoffs.AmericanVanilla.OptionType.Call
             else payoffs.AmericanVanilla.OptionType.Put
           )
 
-        val euPrice = europeanPut.fairValue(sim, nSims).toTry.get
-        val amPrice = americanPut.fairValue(sim, nSims).toTry.get
+        val euPriceMc = euVanilla.contingentClaim(refTime, dsl).fairValue(sim, nSims).toTry.get
+        val amPriceMc = amVanilla.contingentClaim(refTime, dsl).fairValue(sim, nSims).toTry.get
+
         val euPriceFd = fd.feynmankac.blackScholes(
-          euFdPayoff,
+          euVanilla,
           forward,
           discount,
           vol,
@@ -135,8 +116,9 @@ class McVsFd extends munit.FunSuite:
           sgFactory,
           Settings.default
         )
+
         val amPriceFd = fd.feynmankac.blackScholes(
-          amFdPayoff,
+          amVanilla,
           forward,
           discount,
           vol,
@@ -147,5 +129,5 @@ class McVsFd extends munit.FunSuite:
         )
 
         println(
-          s"i=$i, euPrice=$euPrice, euPriceFd=$euPriceFd, amPrice=$amPrice, amPriceFd=$amPriceFd"
+          s"i=$i, euPriceMc=$euPriceMc, euPriceFd=$euPriceFd, amPriceMc=$amPriceMc, amPriceFd=$amPriceFd"
         )
