@@ -16,14 +16,18 @@
 
 package derifree.fd
 
-trait Priceable[A, T]:
+trait FD[A, T]:
 
-  def terminalPayoff(a: A, spot: Double): Double
+  def terminalPayoff(a: A): (T, Double => Double)
 
-  def lowerBoundary: BoundaryCondition
+  def lowerBoundary(a: A): BoundaryCondition
 
-  def upperBoundary: BoundaryCondition
+  def upperBoundary(a: A): BoundaryCondition
 
   def valueTransforms(a: A): List[(T, (Double, Double) => Double)]
 
-  def americanExerciseValue(a: A, t: T, spot: Double): Option[Double]
+  def americanExerciseValue(a: A): Option[T => Double => Double]
+
+object FD:
+
+  def apply[A, T](using ev: FD[A, T]): FD[A, T] = ev

@@ -78,6 +78,8 @@ object YearFraction:
 
   given Ordering[YearFraction] = doubleOrdering
 
+  given Show[YearFraction] = doubleShow
+
   extension (t: YearFraction)
     private[derifree] def toDouble: Double = t
     def -(rhs: YearFraction): YearFraction = t - rhs

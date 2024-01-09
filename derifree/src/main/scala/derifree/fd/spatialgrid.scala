@@ -32,7 +32,9 @@ object SpatialGrid:
 
     def logSinh(n: Int, concentration: Double, x0: Double): Factory = new Factory:
       def apply(min: Double, max: Double): ArraySeq[Double] =
-        self.logSinh(min, max, n, concentration, x0)
+        if min < x0 && x0 < max then
+          fitAntipoint(x0, self.logSinh(min, max, n, concentration, x0))
+        else self.log(min, max, n)
 
   enum SpatialDimension:
     case Spot, LogSpot
@@ -78,6 +80,19 @@ object SpatialGrid:
       Array
         .tabulate(n)(i => i.toDouble / (n - 1))
         .map(sinhTransform(concentration, math.log(x0 / min) / a))
+        .map(u => min * math.exp(u * a))
+    )
+
+  def log(
+      min: Double,
+      max: Double,
+      n: Int
+  ): ArraySeq[Double] =
+    require(max > min && min > 0.0, "must have 0 < min < max")
+    val a = math.log(max / min)
+    ArraySeq.unsafeWrapArray(
+      Array
+        .tabulate(n)(i => i.toDouble / (n - 1))
         .map(u => min * math.exp(u * a))
     )
 

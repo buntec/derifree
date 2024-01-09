@@ -23,22 +23,32 @@ import scala.collection.immutable.ArraySeq
 
 object feynmankac:
 
-  def blackScholes[T: TimeLike](
+  def blackScholes[T: TimeLike, P: FD[_, T]](
+      payoff: P,
       forward: Forward[T],
       discount: YieldCurve[T],
       vol: Double,
-      expiry: T,
-      payout: Double => Double,
       refTime: T,
-      lowerBoundary: BoundaryCondition,
-      upperBoundary: BoundaryCondition,
       timeGridFactory: TimeGrid.Factory,
-      spatialGridFactory: SpatialGrid.Factory
+      spatialGridFactory: SpatialGrid.Factory,
+      settings: Settings
   ): Double =
-    val specialTimes = expiry :: forward.dividends.map(_.exDiv)
+    val P = FD[P, T]
+    val lowerBoundary = P.lowerBoundary(payoff)
+    val upperBoundary = P.upperBoundary(payoff)
+    val expiry = P.terminalPayoff(payoff)(0)
+    val terminalPayout = P.terminalPayoff(payoff)(1)
+
+    val specialTimes =
+      expiry :: forward.dividends.map(_.exDiv) ::: P.valueTransforms(payoff).map(_(0))
     val specialYfs = specialTimes.map(t => refTime.yearFractionTo(t)).toSet
     val timegrid = timeGridFactory(specialYfs)
     val tMax = specialYfs.max
+
+    val valTransformByIndex =
+      P.valueTransforms(payoff)
+        .map((t, f) => timegrid.indexOf(refTime.yearFractionTo(t)).get -> f)
+        .toMap
 
     val divsByIndex = forward.dividends
       .groupBy(_.exDiv)
@@ -51,8 +61,10 @@ object feynmankac:
 
     val s0 = forward.spot
 
-    val pLower = s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1e-5)
-    val pUpper = s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - 1e-5)
+    val pLower =
+      s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, settings.gridQuantile)
+    val pUpper =
+      s0 * SpatialGrid.lognormalPercentile(vol, tMax.toDouble, 0, 1 - settings.gridQuantile)
 
     val sMin =
       lowerBoundary match
@@ -67,12 +79,12 @@ object feynmankac:
     val tEps = TimeGrid.tickSize
 
     val initialGrid = spatialGridFactory(sMin, sMax)
-    val initialInteriorValues = initialGrid.slice(1, initialGrid.length - 1).map(payout)
+    val initialInteriorValues = initialGrid.slice(1, initialGrid.length - 1).map(terminalPayout)
 
     val (finalGrid, finalInteriorValues) =
       (ts zip (ts.zipWithIndex).tail).reverse.zipWithIndex
         .foldLeft((initialGrid, initialInteriorValues)):
-          case ((grid, v2), ((yf1, (yf2, i)), j)) =>
+          case ((grid, v2Pre), ((yf1, (yf2, i)), j)) =>
             val dt = (yf2 - yf1).toDouble
             val t1 = refTime.plusYearFraction(yf1 + tEps)
             val t2 = refTime.plusYearFraction(yf2 - tEps)
@@ -80,7 +92,13 @@ object feynmankac:
             val r = -math.log(discount.discountFactor(t1, t2)) / dt
             val mu = math.log(forward(t2) / forward(t1)) / dt
 
-            val (gridNext, v2Minus) =
+            val v2 = valTransformByIndex
+              .get(i)
+              .fold(v2Pre)(f =>
+                (grid.slice(1, grid.length - 1) zip v2Pre).map((x, v) => f(x, v))
+              )
+
+            val (gridNext, v2MinusPre) =
               divsByIndex
                 .get(i)
                 .fold((grid, v2)): div =>
@@ -151,8 +169,14 @@ object feynmankac:
             val op =
               Operator(gridNext, convection, diffusion, reaction, upperBoundary, lowerBoundary)
 
+            val v2Minus = P
+              .americanExerciseValue(payoff)
+              .fold(v2MinusPre): f =>
+                val exerciseAmount = f(t2)
+                (interiorPoints zip v2MinusPre).map((s, v) => math.max(exerciseAmount(s), v))
+
             val v1 =
-              if j < 2 then
+              if j < settings.nRannacherSteps then
                 // Rannacher smoothing
                 op.implicitStep(op.implicitStep(v2Minus, 0.5 * dt), 0.5 * dt)
               else

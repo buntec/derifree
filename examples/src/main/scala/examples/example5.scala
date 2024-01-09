@@ -18,7 +18,7 @@ package examples
 package example5
 
 import derifree.*
-import derifree.fd.SpatialGrid
+import derifree.fd.*
 import derifree.syntax.*
 
 @main def run: Unit =
@@ -31,24 +31,20 @@ import derifree.syntax.*
   val borrow = YieldCurve.fromContinuouslyCompoundedRate(0.0.rate, refTime)
   val forward = Forward(spot, divs, discount, borrow)
 
-  val payout = (s: Double) => math.max(0.0, s / spot - 1)
-
   val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
   val sgFactory = SpatialGrid.Factory.logSinh(100, 1, spot)
 
+  val payoff = payoffs.EuropeanVanilla(spot, expiry, payoffs.EuropeanVanilla.OptionType.Call)
+
   val solution = fd.feynmankac.blackScholes(
+    payoff,
     forward,
     discount,
     vol,
-    expiry,
-    payout,
     refTime,
-    fd.BoundaryCondition.Linear,
-    // fd.BoundaryCondition.Dirichlet(50.0, 0),
-    fd.BoundaryCondition.Linear,
-    // fd.BoundaryCondition.Dirichlet(100.000001, 100),
     tgFactory,
-    sgFactory
+    sgFactory,
+    Settings.default
   )
 
   println(solution)
