@@ -36,15 +36,26 @@ import derifree.syntax.*
 
   val payoff = payoffs.EuropeanVanilla(spot, expiry, payoffs.EuropeanVanilla.OptionType.Call)
 
-  val solution = fd.feynmankac.blackScholes(
-    payoff,
-    forward,
-    discount,
-    vol,
-    refTime,
-    tgFactory,
-    sgFactory,
-    Settings.default
-  )
+  val priceFun = () =>
+    fd.feynmankac.blackScholes(
+      payoff,
+      forward,
+      discount,
+      vol,
+      refTime,
+      tgFactory,
+      sgFactory,
+      Settings.default
+    )
 
-  println(solution)
+  println(s"price = ${priceFun()}")
+
+  val n = 10000
+  val m = 100
+  (0 until n).foreach: _ =>
+    val t1 = System.nanoTime()
+    for (_ <- 0 until m) do {
+      priceFun()
+    }
+    val t2 = System.nanoTime()
+    println(f"duration = ${(t2 - t1) / m * 1e-6}%.02f ms")

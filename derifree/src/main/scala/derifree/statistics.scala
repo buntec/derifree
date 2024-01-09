@@ -69,9 +69,12 @@ object SummaryStatistics:
       new SummaryStatistics:
         def N: Int = n
         def stdDev: Double = stdDev0
+
+        // crude but good enough for us
         def percentile(p: Double): Double =
           require(p >= 0 && p <= 1, "p must be in [0, 1]")
-          sorted((p * n).toInt)
+          sorted((p * (n - 1)).toInt)
+
         def variance: Double = variance0
         def max: Double = max0
         def min: Double = min0
