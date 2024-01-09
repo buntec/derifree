@@ -70,15 +70,15 @@ object TimeLike:
       def addMillis(t: Instant, millis: Long): Instant =
         t.plus(java.time.Duration.ofMillis(millis))
 
-trait TimeLikeSyntax:
+  trait Syntax:
 
-  given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
+    given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
 
-  extension [T: TimeLike](t: T)
-    def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
-    def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
-    def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
-    def plusSeconds(n: Long): T = TimeLike[T].addSeconds(t, n)
-    def plusMillis(n: Long): T = TimeLike[T].addMillis(t, n)
-    def plusYearFraction(yf: YearFraction): T =
-      TimeLike[T].addMillis(t, math.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))
+    extension [T: TimeLike](t: T)
+      def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
+      def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
+      def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
+      def plusSeconds(n: Long): T = TimeLike[T].addSeconds(t, n)
+      def plusMillis(n: Long): T = TimeLike[T].addMillis(t, n)
+      def plusYearFraction(yf: YearFraction): T =
+        TimeLike[T].addMillis(t, math.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))

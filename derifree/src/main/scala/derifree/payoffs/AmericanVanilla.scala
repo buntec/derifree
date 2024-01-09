@@ -36,6 +36,9 @@ object AmericanVanilla:
   given [T: TimeLike]: MC[AmericanVanilla[T], T] =
     new MC[AmericanVanilla[T], T]:
       def contingentClaim(a: AmericanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+        val omega = a.optionType match
+          case OptionType.Call => 1
+          case OptionType.Put  => -1
         val daysBetween = TimeLike[T].dailyStepsBetween(refTime, a.expiry)
         import dsl.*
         for
@@ -46,10 +49,10 @@ object AmericanVanilla:
               dsl
                 .spot(a.underlying, t)
                 .flatMap(s_t =>
-                  puttable(max(a.strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
+                  puttable(max(omega * (s_t - a.strike), 0.0).some.filter(_ > 0), Ccy.USD, t)
                 )
             )
-          _ <- cashflow(max(a.strike - s, 0.0), a.ccy, a.expiry)
+          _ <- cashflow(max(omega * (s - a.strike), 0.0), a.ccy, a.expiry)
         yield ()
 
   given [T: TimeLike]: FD[AmericanVanilla[T], T] =

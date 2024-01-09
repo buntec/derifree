@@ -36,10 +36,13 @@ object EuropeanVanilla:
   given [T: TimeLike]: MC[EuropeanVanilla[T], T] =
     new MC[EuropeanVanilla[T], T]:
       def contingentClaim(a: EuropeanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+        val omega = a.optionType match
+          case OptionType.Call => 1
+          case OptionType.Put  => -1
         import dsl.*
         for
           s <- spot(a.underlying, a.expiry)
-          _ <- cashflow(max(a.strike - s, 0.0), a.ccy, a.expiry)
+          _ <- cashflow(max(omega * (s - a.strike), 0.0), a.ccy, a.expiry)
         yield ()
 
   given [T: TimeLike]: FD[EuropeanVanilla[T], T] =

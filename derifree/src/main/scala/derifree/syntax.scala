@@ -16,4 +16,4 @@
 
 package derifree
 
-object syntax extends TimeLikeSyntax with QuantitiesSyntax with MC.Syntax
+object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
