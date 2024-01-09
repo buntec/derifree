@@ -17,8 +17,6 @@
 package derifree
 package fd
 
-import scala.collection.immutable.ArraySeq
-
 trait Operator:
 
   def a: TridiagMatrix
@@ -29,39 +27,71 @@ trait Operator:
 
   // v are interior points
   // returns interior points
-  def explicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
-    val ud = a.upperDiagonal.map(_ * dt)
-    val ld = a.lowerDiagonal.map(_ * dt)
-    val d = a.diagonal.map(1.0 + dt * _)
-    val a0 = TridiagMatrix(ld, d, ud)
-    val result = a0.multiply(v)
-    val underlying = result.unsafeArray.asInstanceOf[Array[Double]]
-    underlying(0) += dt * omega(0)
-    underlying(size - 1) += dt * omega(1)
-    result
+  def explicitStep(v: IArray[Double], dt: Double): IArray[Double] =
+
+    val ud = Array.ofDim[Double](size)
+    val ld = Array.ofDim[Double](size)
+    val d = Array.ofDim[Double](size)
+
+    var i = 0
+    while (i < size) {
+      ud(i) = a.upperDiagonal(i) * dt
+      ld(i) = a.lowerDiagonal(i) * dt
+      d(i) = 1.0 + a.diagonal(i) * dt
+      i += 1
+    }
+
+    val a0 = TridiagMatrix(
+      IArray.unsafeFromArray(ld),
+      IArray.unsafeFromArray(d),
+      IArray.unsafeFromArray(ud)
+    )
+
+    val result = Array.ofDim[Double](size)
+    a0.multiply(v).copyToArray(result)
+    result(0) += dt * omega(0)
+    result(size - 1) += dt * omega(1)
+    IArray.unsafeFromArray(result)
 
   // v are interior points
   // returns interior points
-  def implicitStep(v: ArraySeq[Double], dt: Double): ArraySeq[Double] =
-    val ud = a.upperDiagonal.map(_ * -dt)
-    val ld = a.lowerDiagonal.map(_ * -dt)
-    val d = a.diagonal.map(1.0 - dt * _)
-    val op = TridiagMatrix(ld, d, ud)
-    val v0 = v.toArray[Double]
+  def implicitStep(v: IArray[Double], dt: Double): IArray[Double] =
+
+    val ud = Array.ofDim[Double](size)
+    val ld = Array.ofDim[Double](size)
+    val d = Array.ofDim[Double](size)
+
+    var i = 0
+    while (i < size) {
+      ud(i) = a.upperDiagonal(i) * -dt
+      ld(i) = a.lowerDiagonal(i) * -dt
+      d(i) = 1.0 - a.diagonal(i) * dt
+      i += 1
+    }
+
+    val a0 = TridiagMatrix(
+      IArray.unsafeFromArray(ld),
+      IArray.unsafeFromArray(d),
+      IArray.unsafeFromArray(ud)
+    )
+
+    val v0 = Array.ofDim[Double](v.length)
+    v.copyToArray(v0)
     v0(0) += dt * omega(0)
     v0(size - 1) += dt * omega(1)
-    op.solve(ArraySeq.unsafeWrapArray(v0))
 
-  def thetaStep(v: ArraySeq[Double], dt: Double, theta: Double) =
+    a0.solve(IArray.unsafeFromArray(v0))
+
+  def thetaStep(v: IArray[Double], dt: Double, theta: Double) =
     implicitStep(explicitStep(v, theta * dt), (1 - theta) * dt)
 
 object Operator:
 
   def apply(
-      grid: ArraySeq[Double],
-      convection: ArraySeq[Double],
-      diffusion: ArraySeq[Double],
-      reaction: ArraySeq[Double],
+      grid: IArray[Double],
+      convection: IArray[Double],
+      diffusion: IArray[Double],
+      reaction: IArray[Double],
       upperBoundary: BoundaryCondition,
       lowerBoundary: BoundaryCondition
   ): Operator =
@@ -70,6 +100,7 @@ object Operator:
       convection.length == n && diffusion.length == n && reaction.length == n,
       "dimension mismatch"
     )
+
     val diag = Array.ofDim[Double](n)
     val lowerDiag = Array.ofDim[Double](n)
     val upperDiag = Array.ofDim[Double](n)
@@ -109,9 +140,9 @@ object Operator:
       def size: Int = n
 
       def a: TridiagMatrix = TridiagMatrix(
-        ArraySeq.unsafeWrapArray(lowerDiag),
-        ArraySeq.unsafeWrapArray(diag),
-        ArraySeq.unsafeWrapArray(upperDiag)
+        IArray.unsafeFromArray(lowerDiag),
+        IArray.unsafeFromArray(diag),
+        IArray.unsafeFromArray(upperDiag)
       )
 
       def omega = (

@@ -17,14 +17,12 @@
 package derifree
 package fd
 
-import scala.collection.immutable.ArraySeq
-
 case class TridiagMatrix(
-    lowerDiagonal: ArraySeq[
+    lowerDiagonal: IArray[
       Double
     ], // same length as diagonal with the convention that the 0-th entry is used only for Dirichlet boundary conditions in PDEs
-    diagonal: ArraySeq[Double],
-    upperDiagonal: ArraySeq[
+    diagonal: IArray[Double],
+    upperDiagonal: IArray[
       Double
     ] // the same length as diagonal with the convention that the last entry is used only for Dirichlet boundary conditions in PDEs
 ):
@@ -32,7 +30,7 @@ case class TridiagMatrix(
   def length: Int = diagonal.length
 
   // computes y = mx
-  def multiply(x: ArraySeq[Double]): ArraySeq[Double] =
+  def multiply(x: IArray[Double]): IArray[Double] =
     val n = length
     val y = Array.ofDim[Double](length)
     require(x.length == n && y.length == n, "dimension mismatch")
@@ -46,10 +44,10 @@ case class TridiagMatrix(
       i += 1
     }
     y(n - 1) = x(n - 2) * lo(n - 1) + x(n - 1) * d(n - 1)
-    ArraySeq.unsafeWrapArray(y)
+    IArray.unsafeFromArray(y)
 
   // solves my = x for y
-  def solve(x: ArraySeq[Double]): ArraySeq[Double] =
+  def solve(x: IArray[Double]): IArray[Double] =
     val n = length
     require(x.length == n)
     val y = Array.ofDim[Double](n)
@@ -78,4 +76,4 @@ case class TridiagMatrix(
       y(i) = b(i) - a(i) * y(i + 1)
       i -= 1
     }
-    ArraySeq.unsafeWrapArray(y)
+    IArray.unsafeFromArray(y)

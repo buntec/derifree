@@ -19,8 +19,6 @@ package fd
 
 import derifree.syntax.*
 
-import scala.collection.immutable.ArraySeq
-
 object feynmankac:
 
   def blackScholes[T: TimeLike, P: FD[_, T]](
@@ -161,13 +159,30 @@ object feynmankac:
                         )
 
             val interiorPoints = gridNext.slice(1, gridNext.length - 1)
+            val n = interiorPoints.length
 
-            val reaction = interiorPoints.map(_ => r)
-            val convection = interiorPoints.map(_ * mu)
-            val diffusion = interiorPoints.map(s => 0.5 * s * s * vol * vol)
+            val reaction = Array.ofDim[Double](n)
+            val convection = Array.ofDim[Double](n)
+            val diffusion = Array.ofDim[Double](n)
+
+            var k = 0
+            while (k < n) {
+              val s = interiorPoints(k)
+              reaction(k) = r
+              convection(k) = s * mu
+              diffusion(k) = 0.5 * s * s * vol * vol
+              k += 1
+            }
 
             val op =
-              Operator(gridNext, convection, diffusion, reaction, upperBoundary, lowerBoundary)
+              Operator(
+                gridNext,
+                IArray.unsafeFromArray(convection),
+                IArray.unsafeFromArray(diffusion),
+                IArray.unsafeFromArray(reaction),
+                upperBoundary,
+                lowerBoundary
+              )
 
             val v2Minus = P
               .americanExerciseValue(payoff)

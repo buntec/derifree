@@ -19,19 +19,17 @@ package fd
 
 import org.apache.commons.math3.util.{FastMath => math}
 
-import scala.collection.immutable.ArraySeq
-
 object SpatialGrid:
   self =>
 
   trait Factory:
 
-    def apply(min: Double, max: Double): ArraySeq[Double]
+    def apply(min: Double, max: Double): IArray[Double]
 
   object Factory:
 
     def logSinh(n: Int, concentration: Double, x0: Double): Factory = new Factory:
-      def apply(min: Double, max: Double): ArraySeq[Double] =
+      def apply(min: Double, max: Double): IArray[Double] =
         if min < x0 && x0 < max then
           fitAntipoint(x0, self.logSinh(min, max, n, concentration, x0))
         else self.log(min, max, n)
@@ -73,10 +71,10 @@ object SpatialGrid:
       n: Int,
       concentration: Double,
       x0: Double
-  ): ArraySeq[Double] =
+  ): IArray[Double] =
     require(max > x0 && x0 > min && min > 0.0, "must have min < x0 < max")
     val a = math.log(max / min)
-    ArraySeq.unsafeWrapArray(
+    IArray.unsafeFromArray(
       Array
         .tabulate(n)(i => i.toDouble / (n - 1))
         .map(sinhTransform(concentration, math.log(x0 / min) / a))
@@ -87,22 +85,22 @@ object SpatialGrid:
       min: Double,
       max: Double,
       n: Int
-  ): ArraySeq[Double] =
+  ): IArray[Double] =
     require(max > min && min > 0.0, "must have 0 < min < max")
     val a = math.log(max / min)
-    ArraySeq.unsafeWrapArray(
+    IArray.unsafeFromArray(
       Array
         .tabulate(n)(i => i.toDouble / (n - 1))
         .map(u => min * math.exp(u * a))
     )
 
-  def fitAntipoint(antipoint: Double, grid: ArraySeq[Double]): ArraySeq[Double] =
+  def fitAntipoint(antipoint: Double, grid: IArray[Double]): IArray[Double] =
     require(
       antipoint >= grid.min && antipoint <= grid.max,
       "antipoint outside end points"
     )
     val i = {
-      val j = java.util.Arrays.binarySearch(grid.toArray, antipoint)
+      val j = grid.search(antipoint).insertionPoint
       if (j >= 0) j else -(j + 1)
     }
     val x1 = grid(i - 1)
@@ -111,11 +109,11 @@ object SpatialGrid:
     grid.map(_ + alpha)
 
   def addBoundaryValues(
-      grid: ArraySeq[Double],
-      interiorValues: ArraySeq[Double],
+      grid: IArray[Double],
+      interiorValues: IArray[Double],
       lowerBoundary: BoundaryCondition,
       upperBoundary: BoundaryCondition
-  ): ArraySeq[Double] =
+  ): IArray[Double] =
     val n = grid.length - 2 // number of interior points
     require(interiorValues.length == n, "dimension mismatch")
     val vLeft = lowerBoundary match
