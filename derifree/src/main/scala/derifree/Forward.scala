@@ -31,6 +31,14 @@ trait Forward[T]:
 object Forward:
 
   def apply[T: TimeLike](
+      spot: Double,
+      divs: List[Dividend[T]],
+      discount: YieldCurve[T],
+      borrow: YieldCurve[T]
+  ): Forward[T] = impl(spot, divs, discount, borrow)
+
+  // reference implementation: correct but slower
+  private[derifree] def referenceImpl[T: TimeLike](
       spot0: Double,
       divs: List[Dividend[T]],
       discount: YieldCurve[T],
@@ -75,6 +83,62 @@ object Forward:
     val sumOfAlphaStar: Double = (divs zip rs).map(_.cash / _).sum
 
     // S_0^\star = S_0 - \sum_{j=1}^n \alpha_j^\star
+    val s0Star: Double = spot0 - sumOfAlphaStar
+
+    new Forward[T]:
+      def spot: Double = spot0
+      def apply(t: T): Double = s0Star * r(t) + d(t)
+      def dividendFloor(t: T): Double = d(t)
+      def dividends: List[Dividend[T]] = divs
+
+  private[derifree] def impl[T: TimeLike](
+      spot0: Double,
+      divs: List[Dividend[T]],
+      discount: YieldCurve[T],
+      borrow: YieldCurve[T]
+  ): Forward[T] =
+
+    val divsArr = divs.toArray
+    val nDivs = divsArr.length
+
+    def r(t: T): Double =
+      var i = 0
+      var acc = 1.0
+      while (i < nDivs && divsArr(i).exDiv <= t) {
+        acc *= (1 - divsArr(i).prop)
+        i += 1
+      }
+      acc * borrow.discountFactor(t) / discount.discountFactor(t)
+
+    val rs: Array[Double] =
+      (divs match
+        case Nil => Nil
+        case h :: t =>
+          val div0 = h
+          val r0 =
+            (1 - div0.prop) * borrow.discountFactor(div0.exDiv) / discount.discountFactor(
+              div0.exDiv
+            )
+          (divs zip t).scanLeft(r0):
+            case (acc, (div1, div2)) =>
+              acc * (1 - div2.prop) * borrow.discountFactor(div1.exDiv, div2.exDiv) / discount
+                .discountFactor(
+                  div1.exDiv,
+                  div2.exDiv
+                )
+      ).toArray
+
+    def d(t: T): Double =
+      var i = nDivs - 1
+      var acc = 0.0
+      while (i >= 0 && divsArr(i).exDiv > t) {
+        acc += divsArr(i).cash / rs(i)
+        i -= 1
+      }
+      r(t) * acc
+
+    val sumOfAlphaStar: Double = (divs zip rs).map(_.cash / _).sum
+
     val s0Star: Double = spot0 - sumOfAlphaStar
 
     new Forward[T]:
