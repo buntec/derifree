@@ -48,49 +48,55 @@ class EuropeanVanillaSuite extends munit.FunSuite:
     val spot = 100.0
     val divs = Nil // Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
 
-    genCase.view.zipWithIndex
+    val statsBuilder = genCase.view.zipWithIndex
       .take(1000)
-      .foreach: (c, i) =>
-        val expiry = c.timeToExpiry
-        val strike = c.strike
-        val vol = c.vol
-        val discount = YieldCurve.fromContinuouslyCompoundedRate(c.discountRate.rate, refTime)
-        val borrow = YieldCurve.fromContinuouslyCompoundedRate(c.borrowRate.rate, refTime)
-        val forward = Forward(spot, divs, discount, borrow)
+      .foldLeft(SummaryStatistics.builder):
+        case (statsBuilder, (c, i)) =>
+          val expiry = c.timeToExpiry
+          val strike = c.strike
+          val vol = c.vol
+          val discount = YieldCurve.fromContinuouslyCompoundedRate(c.discountRate.rate, refTime)
+          val borrow = YieldCurve.fromContinuouslyCompoundedRate(c.borrowRate.rate, refTime)
+          val forward = Forward(spot, divs, discount, borrow)
 
-        val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
-        val sgFactory = SpatialGrid.Factory.logSinh(300, 0.01, strike)
+          val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
+          val sgFactory = SpatialGrid.Factory.logSinh(300, 0.01, strike)
 
-        val payoff =
-          payoffs.EuropeanVanilla(
-            strike,
-            expiry,
-            if c.isCall then payoffs.EuropeanVanilla.OptionType.Call
-            else payoffs.EuropeanVanilla.OptionType.Put
+          val payoff =
+            payoffs.EuropeanVanilla(
+              strike,
+              expiry,
+              if c.isCall then payoffs.EuropeanVanilla.OptionType.Call
+              else payoffs.EuropeanVanilla.OptionType.Put
+            )
+
+          val price = fd.feynmankac.blackScholes(
+            payoff,
+            forward,
+            discount,
+            vol,
+            refTime,
+            tgFactory,
+            sgFactory,
+            Settings.default
           )
 
-        val price = fd.feynmankac.blackScholes(
-          payoff,
-          forward,
-          discount,
-          vol,
-          refTime,
-          tgFactory,
-          sgFactory,
-          Settings.default
-        )
+          val timeToMat = refTime.yearFractionTo(expiry)
+          val refPrice = black.price(
+            if c.isCall then black.OptionType.Call else black.OptionType.Put,
+            strike,
+            timeToMat.toDouble,
+            vol,
+            forward(timeToMat),
+            discount.discountFactor(timeToMat)
+          )
 
-        val timeToMat = refTime.yearFractionTo(expiry)
-        val refPrice = black.price(
-          if c.isCall then black.OptionType.Call else black.OptionType.Put,
-          strike,
-          timeToMat.toDouble,
-          vol,
-          forward(timeToMat),
-          discount.discountFactor(timeToMat)
-        )
+          val clue = show"i=$i, price=$price, ref=$refPrice, case=$c"
+          // println(clue)
 
-        val clue = show"i=$i, price=$price, ref=$refPrice, case=$c"
-        println(clue)
+          val diff = math.abs(price - refPrice)
+          assertEqualsDouble(price, refPrice, 0.01, clue)
+          statsBuilder.add(diff)
 
-        assertEqualsDouble(price, refPrice, 0.01, clue)
+    val stats = statsBuilder.build
+    println(stats.summaryString)
