@@ -32,6 +32,7 @@ lazy val V = new {
   val commonsMath = "3.6.1"
   val ejml = "0.43.1"
   val scalameta = "0.7.29"
+  val parallelCollection = "1.0.4"
 }
 
 lazy val root = tlCrossRootProject.aggregate(derifree, examples)
@@ -49,7 +50,8 @@ lazy val derifree = (project in file("derifree"))
       "org.typelevel" %% "literally" % V.literally,
       "org.apache.commons" % "commons-math3" % V.commonsMath,
       "org.ejml" % "ejml-all" % V.ejml,
-      "org.scalameta" %% "munit" % V.scalameta % Test
+      "org.scalameta" %% "munit" % V.scalameta % Test,
+      "org.scala-lang.modules" %% "scala-parallel-collections" % V.parallelCollection % Test
     )
   )
 

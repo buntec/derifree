@@ -19,6 +19,7 @@ package derifree
 import derifree.fd.*
 import derifree.syntax.*
 
+import scala.collection.parallel.CollectionConverters._
 import scala.concurrent.duration.*
 import scala.math.abs
 
@@ -70,7 +71,7 @@ class LsmSuite extends munit.FunSuite:
     val rate = 0.06
     val divs = Nil
 
-    rows.foreach: row =>
+    rows.par.foreach: row =>
 
       val expiry = YearFraction(row.T)
       val vol = row.sigma

@@ -19,6 +19,7 @@ package derifree
 import cats.syntax.all.*
 import derifree.syntax.*
 
+import scala.collection.parallel.CollectionConverters._
 import scala.math.abs
 
 class AmericanVanillaSuite extends munit.FunSuite:
@@ -44,7 +45,7 @@ class AmericanVanillaSuite extends munit.FunSuite:
       Row(120.0, 0.09, 0.09, 0.05)
     )
 
-    rows.foreach { case Row(s0, euPriceRef, amPriceRef, absTol) =>
+    rows.par.foreach { case Row(s0, euPriceRef, amPriceRef, absTol) =>
       val spots = Map(udl -> s0)
       val vols = Map(udl -> 0.2.vol)
       val rate = 0.08.rate
