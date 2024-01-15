@@ -160,7 +160,7 @@ def simulator[T: TimeLike](
 
       (
         normalGenFactory(nUdl, nt - 1),
-        utils.cholesky(correlations, udls),
+        utils.correlationMatrixCholeskyDecomp(correlations, udls),
         timeIndexE,
         spotObsTimesE,
         volsE,

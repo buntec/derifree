@@ -24,3 +24,4 @@ object Error:
   case class Generic(message: String) extends Error(message)
   case class MissingData(message: String) extends Error(message)
   case class BadNumerics(message: String) extends Error(message)
+  case class BadInputs(message: String) extends Error(message)
