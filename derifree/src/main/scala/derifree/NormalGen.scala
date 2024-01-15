@@ -17,27 +17,20 @@
 package derifree
 
 import cats.data.State
+import org.apache.commons.math3.random.MersenneTwister
 
+import scala.collection.AbstractView
 import scala.collection.View
 import scala.collection.immutable.ArraySeq
 
+/** Produces uncorrelated standard normal variates, one (m x n) matrix at a time. */
 sealed trait NormalGen:
 
-  type S // state of the underlying rng
-
-  def init(offset: Int): S
-
+  /** (m x n) */
   def dimensions: (Int, Int)
 
   /** Nested `IndexedSeq` dimensions equal `dimensions`. */
-  def next: State[S, IndexedSeq[IndexedSeq[Double]]]
-
-  def skipTo(pos: Int): State[S, Unit]
-
-  def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]] =
-    View.Unfold(init(offset)): s =>
-      val (nextState, xs) = next.run(s).value
-      Some((xs, nextState))
+  def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]]
 
 object NormalGen:
 
@@ -46,9 +39,32 @@ object NormalGen:
 
   object Factory:
 
+    def mersenneTwister: Factory = new Factory:
+      def apply(m: Int, n: Int): Either[Error, NormalGen] = fromMersenneTwister(m, n)
+
     def sobol(dirs: Sobol.DirectionNumbers): Factory = new Factory:
       def apply(m: Int, n: Int): Either[Error, NormalGen] =
         fromSobol(m, n, dirs)
+
+  def fromMersenneTwister(m: Int, n: Int): Either[derifree.Error, NormalGen] =
+    Right(
+      new NormalGen:
+        def dimensions: (Int, Int) = (m, n)
+        def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]] =
+          new AbstractView[IndexedSeq[IndexedSeq[Double]]]:
+            override def iterator: Iterator[IndexedSeq[IndexedSeq[Double]]] =
+              val mt = MersenneTwister(0)
+
+              for (_ <- 0 until offset)
+              do mt.nextDouble()
+
+              Iterator.continually:
+                ArraySeq.unsafeWrapArray(
+                  Array.fill(m)(
+                    ArraySeq.unsafeWrapArray(Array.fill(n)(normal.inverseCdf(mt.nextDouble())))
+                  )
+                )
+    )
 
   def fromSobol(
       m: Int,
@@ -88,3 +104,8 @@ object NormalGen:
             }
 
             ArraySeq.unsafeWrapArray(zs.map(ArraySeq.unsafeWrapArray))
+
+        def view(offset: Int): View[IndexedSeq[IndexedSeq[Double]]] =
+          View.Unfold(init(offset)): s =>
+            val (nextState, xs) = next.run(s).value
+            Some((xs, nextState))

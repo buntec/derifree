@@ -83,12 +83,13 @@ class LsmSuite extends munit.FunSuite:
 
       val tgFactory = TimeGrid.Factory.almostEquidistant(YearFraction.oneDay)
       val sgFactory = SpatialGrid.Factory.logSinh(300, 0.01, strike)
+      val ngFactory = NormalGen.Factory.sobol(dirNums)
 
       val assets = models.blackscholes.Asset(udl, Ccy.USD, forward, vol.vol) :: Nil
 
       val sim = models.blackscholes.simulator(
-        TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-        NormalGen.Factory.sobol(dirNums),
+        tgFactory,
+        ngFactory,
         refTime,
         assets,
         Map.empty,
