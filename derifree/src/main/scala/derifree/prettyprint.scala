@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package derifree.prettyprint
+package derifree
 
-import cats.Show
+private[derifree] object prettyprint:
 
-given [A: Show]: Show[IndexedSeq[IndexedSeq[A]]] =
-  Show.show(_.map(_.map(Show[A].show).mkString("[", ", ", "]")).mkString("\n"))
+  extension (x: Double)
+    def prettyPrint(digits: Int): String = String.format("%." + digits + "f", x)
 
-given [A: Show]: Show[Array[Array[A]]] =
-  Show.show(_.map(_.map(Show[A].show).mkString("[", ", ", "]")).mkString("\n"))
+  extension [A <: Seq[Double]](a: A)
+    def prettyPrint(digits: Int): String =
+      a.map(x => x.prettyPrint(digits)).mkString("[", ", ", "]")

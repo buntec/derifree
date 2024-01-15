@@ -14,6 +14,21 @@
  * limitations under the License.
  */
 
-package derifree
+package derifree.fd
 
-object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
+trait FD[A, T]:
+
+  def terminalPayoff(a: A): (T, Double => Double)
+
+  def lowerBoundary(a: A): BoundaryCondition
+
+  def upperBoundary(a: A): BoundaryCondition
+
+  // (spot, value)
+  def valueTransforms(a: A): List[(T, (Double, Double) => Double)]
+
+  def americanExerciseValue(a: A): Option[T => Double => Double]
+
+object FD:
+
+  def apply[A, T](using ev: FD[A, T]): FD[A, T] = ev

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
-package derifree
+package derifree.fd
 
-object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
+enum BoundaryCondition:
+  case Linear
+  case Dirichlet(spot: Double, value: Double)

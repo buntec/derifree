@@ -191,7 +191,11 @@ private[derifree] sealed trait Compiler[T]:
                   callAmountMaybe.isDefined || putAmountMaybe.isDefined
                 )
                 .map((factors, contValue, _, _) => (factors, contValue.toDouble))
-              if (filteredRows.nonEmpty && filteredRows.length > filteredRows.head(0).length)
+              // TODO: 1% is an arbitrary cutoff
+              if (
+                filteredRows.nonEmpty && filteredRows.length > math
+                  .max(0.01 * nSims, filteredRows.head(0).length)
+              )
               then lsm0.continuationValueEstimator(filteredRows).map(_.some)
               else Right(None) // too few relevant paths for least-squares
             )
@@ -437,10 +441,7 @@ private[derifree] object Compiler:
                     .fromOption(
                       sim.timeIndex
                         .get(time)
-                        .map(i =>
-                          // println(s"df: ${sim.discounts(i)}")
-                          PV(amount * sim.discounts(i))
-                        ),
+                        .map(i => PV(amount * sim.discounts(i))),
                       Error.Generic(s"missing time index for discount time $time")
                     )
                     .map(pv => (ProfileBuilder.cashflow(time, pv), pv))

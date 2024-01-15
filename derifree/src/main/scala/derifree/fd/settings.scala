@@ -14,6 +14,13 @@
  * limitations under the License.
  */
 
-package derifree
+package derifree.fd
 
-object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
+final case class Settings(
+    gridQuantile: Double = 1e-5,
+    nRannacherSteps: Int = 2
+)
+
+object Settings:
+
+  val default: Settings = Settings()

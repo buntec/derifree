@@ -16,4 +16,16 @@
 
 package derifree
 
-object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
+trait MC[A, T]:
+
+  def contingentClaim(a: A, refTime: T, dsl: Dsl[T]): dsl.ContingentClaim
+
+object MC:
+
+  def apply[A, T](using ev: MC[A, T]): MC[A, T] = ev
+
+  trait Syntax:
+
+    extension [T, A: MC[_, T]](a: A)
+      def contingentClaim(refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+        MC[A, T].contingentClaim(a, refTime, dsl)

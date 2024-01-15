@@ -15,5 +15,10 @@
  */
 
 package derifree
+package fd
 
-object syntax extends TimeLike.Syntax with QuantitiesSyntax with MC.Syntax
+object interpolation:
+
+  def naturalCubicSpline(xs: IndexedSeq[Double], ys: IndexedSeq[Double]): Double => Double =
+    val spline = CubicSpline.natural(xs, ys)
+    (strike: Double) => spline(strike)

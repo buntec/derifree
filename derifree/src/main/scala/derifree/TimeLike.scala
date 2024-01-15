@@ -19,16 +19,30 @@ package derifree
 import cats.kernel.Order
 
 import java.time.Instant
+import scala.concurrent.duration.FiniteDuration
 
 trait TimeLike[T] extends Order[T]:
 
   def yearFractionBetween(x: T, y: T): YearFraction
 
-  def dailyStepsBetween(start: T, stop: T): List[T]
+  def addMillis(t: T, millis: Long): T
 
-  def addDays(t: T, days: Int): T
+  final def addSeconds(t: T, seconds: Long): T = addMillis(t, seconds * 1000)
 
-  def addSeconds(t: T, seconds: Int): T
+  final def addMinutes(t: T, minutes: Long): T = addSeconds(t, minutes * 60L)
+
+  final def addHours(t: T, hours: Long): T = addMinutes(t, hours * 60L)
+
+  final def addDays(t: T, days: Int): T = addHours(t, days * 24L)
+
+  final def dailyStepsBetween(start: T, stop: T): List[T] =
+    List.unfold(addDays(start, 1))(s => if lt(s, stop) then Some((s, addDays(s, 1))) else None)
+
+  final def stepsBetween(start: T, stop: T, step: FiniteDuration): List[T] =
+    val stepMillis = step.toMillis
+    List.unfold(addMillis(start, stepMillis))(s =>
+      if lt(s, stop) then Some((s, addMillis(s, stepMillis))) else None
+    )
 
 object TimeLike:
 
@@ -42,17 +56,8 @@ object TimeLike:
     def yearFractionBetween(x: YearFraction, y: YearFraction): YearFraction =
       y - x
 
-    def dailyStepsBetween(
-        start: YearFraction,
-        stop: YearFraction
-    ): List[YearFraction] =
-      val dt = YearFraction.oneDay
-      List.unfold(start + dt)(s => if s < stop then Some((s, s + dt)) else None)
-
-    def addDays(t: YearFraction, n: Int): YearFraction = t + YearFraction.oneDay * n
-
-    def addSeconds(t: YearFraction, seconds: Int): YearFraction =
-      t + YearFraction.oneSecond * seconds
+    def addMillis(t: YearFraction, millis: Long): YearFraction =
+      t + YearFraction.oneMilli * millis
 
   given TimeLike[java.time.Instant] =
     new TimeLike[java.time.Instant]:
@@ -69,23 +74,18 @@ object TimeLike:
             .toMillis / (1000.0 * 60 * 60 * 24 * 365)
         )
 
-      def dailyStepsBetween(start: Instant, stop: Instant): List[Instant] =
-        val dt = java.time.Duration.ofDays(1)
-        List.unfold(start.plus(dt))(s =>
-          if s.isBefore(stop) then Some((s, s.plus(dt))) else None
-        )
+      def addMillis(t: Instant, millis: Long): Instant =
+        t.plus(java.time.Duration.ofMillis(millis))
 
-      def addDays(t: Instant, n: Int): Instant = t.plus(java.time.Duration.ofDays(n))
+  trait Syntax:
 
-      def addSeconds(t: Instant, seconds: Int): Instant =
-        t.plus(java.time.Duration.ofSeconds(seconds))
+    given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
 
-trait TimeLikeSyntax:
-
-  given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
-
-  extension [T: TimeLike](t: T)
-    def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
-    def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
-    def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
-    def plusSeconds(n: Int): T = TimeLike[T].addSeconds(t, n)
+    extension [T: TimeLike](t: T)
+      def yearFractionTo(t2: T): YearFraction = TimeLike[T].yearFractionBetween(t, t2)
+      def dailyStepsTo(t2: T): List[T] = TimeLike[T].dailyStepsBetween(t, t2)
+      def plusDays(n: Int): T = TimeLike[T].addDays(t, n)
+      def plusSeconds(n: Long): T = TimeLike[T].addSeconds(t, n)
+      def plusMillis(n: Long): T = TimeLike[T].addMillis(t, n)
+      def plusYearFraction(yf: YearFraction): T =
+        TimeLike[T].addMillis(t, math.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))

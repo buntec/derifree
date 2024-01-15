@@ -17,7 +17,10 @@
 package derifree
 
 import cats.syntax.all.*
+import derifree.prettyprint.*
 import org.ejml.data.DMatrixRMaj
+import org.ejml.dense.row.CommonOps_DDRM
+import org.ejml.dense.row.NormOps_DDRM
 import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
 
 import collection.immutable.ArraySeq
@@ -36,6 +39,8 @@ private[derifree] object Lsm:
   trait Estimator:
 
     def apply(factors: IndexedSeq[Double]): Double
+
+    def stdDev: Double
 
   def fromPoly(maxDegree: Int): Lsm = new Lsm:
 
@@ -61,7 +66,6 @@ private[derifree] object Lsm:
             )
           )
           .leftMap(t => Error.BadInputs(t.getMessage))
-        // _ = println( s"rows = ${a.numRows}, cols = ${a.numCols}, data.length = ${data.length}, data = ${a.data.mkString(", ")}")
         b <- Either
           .catchNonFatal(new DMatrixRMaj(m, 1, true, rows.map(_(1))*))
           .leftMap(t => Error.BadInputs(t.getMessage))
@@ -78,8 +82,17 @@ private[derifree] object Lsm:
           .leftMap(t => Error.BadNumericsException(t.getMessage))
       yield
         val coeffs = x.data.toIndexedSeq
-        // println(s"coeffs: $coeffs")
+        // println(s"rows=$m, coeffs: $coeffs")
+        val condStd =
+          NormOps_DDRM.normP2(
+            CommonOps_DDRM.subtract(CommonOps_DDRM.mult(a, x, null), b, null)
+          ) / m
+
+        // println(s"b = ${b.data.prettyPrint(2)}")
+        // println(s"cond std = $condStd, m=$m")
+
         new Estimator:
+          def stdDev: Double = condStd
           def apply(factors: IndexedSeq[Double]): Double =
             (basisFunctions(factors) zip coeffs).map(_ * _).sum
 

@@ -64,6 +64,10 @@ object Gen:
     val r = scala.util.Random(s)
     (r.nextLong(), r.nextInt())
 
+  val boolean: Gen[Boolean] = State: s =>
+    val r = scala.util.Random(s)
+    (r.nextLong(), r.nextBoolean())
+
   def choose[A](as: A*): Gen[A] = State: s =>
     val r = scala.util.Random(s)
     val i = r.nextInt(as.length)
