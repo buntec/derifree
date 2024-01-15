@@ -17,10 +17,13 @@
 package derifree.math
 
 import cats.syntax.all.*
+import org.apache.commons.math3.stat.regression.OLSMultipleLinearRegression
 import org.ejml.data.DMatrixRMaj
 import org.ejml.dense.row.CommonOps_DDRM
 import org.ejml.dense.row.NormOps_DDRM
 import org.ejml.dense.row.factory.LinearSolverFactory_DDRM
+
+import scala.{math => smath}
 
 import LeastSquares.*
 
@@ -45,8 +48,35 @@ object LeastSquares:
     case BadNumericsException(message: String) extends Error(message)
     case BadInputs(message: String) extends Error(message)
 
+  def apply: LeastSquares = ejml
+
+  /** Implementation based on Apache commons math. */
+  private[math] def commonsmath: LeastSquares = new LeastSquares:
+    def ols(a: Seq[Seq[Double]], y: Seq[Double]): Either[Error, Result] =
+      val lr = new OLSMultipleLinearRegression
+      lr.setNoIntercept(true)
+      for
+        _ <- Either.raiseWhen(a.isEmpty)(Error.BadInputs("empty rows"))
+        _ <- Either
+          .catchNonFatal(lr.newSampleData(y.toArray, a.map(_.toArray).toArray))
+          .leftMap(t => Error.BadInputs(t.getMessage))
+        beta <- Either
+          .catchNonFatal(lr.estimateRegressionParameters())
+          .leftMap(t => Error.BadInputs(t.getMessage))
+        residuals <- Either
+          .catchNonFatal(lr.estimateResiduals.toIndexedSeq)
+          .leftMap(t => Error.BadInputs(t.getMessage))
+        residualSumOfSquares <- Either
+          .catchNonFatal(lr.calculateResidualSumOfSquares())
+          .leftMap(t => Error.BadInputs(t.getMessage))
+      yield Result(
+        beta.toIndexedSeq,
+        residuals.toIndexedSeq,
+        smath.sqrt(residualSumOfSquares)
+      )
+
   /** Implementation based on ejml. */
-  def ejml: LeastSquares = new LeastSquares:
+  private[math] def ejml: LeastSquares = new LeastSquares:
     def ols(a: Seq[Seq[Double]], y: Seq[Double]): Either[Error, Result] =
       for
         _ <- Either.raiseWhen(a.isEmpty)(Error.BadInputs("empty rows"))

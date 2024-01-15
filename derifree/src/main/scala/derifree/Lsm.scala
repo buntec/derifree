@@ -50,7 +50,7 @@ private[derifree] object Lsm:
       val m = rows.length
       val a = rows.map((factors, _) => basisFunctions(factors.toIndexedSeq)).toIndexedSeq
       val b = rows.map(_(1)).toIndexedSeq
-      LeastSquares.ejml
+      LeastSquares.apply
         .ols(a, b)
         .map: result =>
           val coeffs = result.coefficients
