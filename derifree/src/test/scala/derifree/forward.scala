@@ -54,7 +54,6 @@ class ForwardSuite extends munit.FunSuite:
       .take(1000)
       .foreach: (c, i) =>
         val clue = s"i = $i, case = $c"
-        // println(clue)
         val f1 = Forward(c.spot, c.divs, c.discount, c.borrow)
         val f2 = Forward.referenceImpl(c.spot, c.divs, c.discount, c.borrow)
         val ts = List(0, 1, 7, 30, 90, 365, 730).map(refTime.plusDays)

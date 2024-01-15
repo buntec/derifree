@@ -19,6 +19,7 @@ package derifree
 import cats.kernel.Order
 
 import java.time.Instant
+import scala.concurrent.duration.FiniteDuration
 
 trait TimeLike[T] extends Order[T]:
 
@@ -36,6 +37,12 @@ trait TimeLike[T] extends Order[T]:
 
   final def dailyStepsBetween(start: T, stop: T): List[T] =
     List.unfold(addDays(start, 1))(s => if lt(s, stop) then Some((s, addDays(s, 1))) else None)
+
+  final def stepsBetween(start: T, stop: T, step: FiniteDuration): List[T] =
+    val stepMillis = step.toMillis
+    List.unfold(addMillis(start, stepMillis))(s =>
+      if lt(s, stop) then Some((s, addMillis(s, stepMillis))) else None
+    )
 
 object TimeLike:
 

@@ -24,6 +24,7 @@ trait FD[A, T]:
 
   def upperBoundary(a: A): BoundaryCondition
 
+  // (spot, value)
   def valueTransforms(a: A): List[(T, (Double, Double) => Double)]
 
   def americanExerciseValue(a: A): Option[T => Double => Double]

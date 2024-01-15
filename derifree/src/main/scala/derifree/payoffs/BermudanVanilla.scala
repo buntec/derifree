@@ -19,34 +19,32 @@ package payoffs
 
 import cats.syntax.all.*
 import derifree.fd.*
+import derifree.syntax.*
 
-case class AmericanVanilla[T](
+case class BermudanVanilla[T](
     underlying: String,
     ccy: Ccy,
     strike: Double,
     expiry: T,
-    optionType: AmericanVanilla.OptionType
+    exerciseTimes: List[T],
+    optionType: BermudanVanilla.OptionType
 )
 
-object AmericanVanilla:
+object BermudanVanilla:
 
   enum OptionType:
     case Call, Put
 
-  given [T: TimeLike]: MC[AmericanVanilla[T], T] =
-    new MC[AmericanVanilla[T], T]:
-      def contingentClaim(a: AmericanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
+  given [T: TimeLike]: MC[BermudanVanilla[T], T] =
+    new MC[BermudanVanilla[T], T]:
+      def contingentClaim(a: BermudanVanilla[T], refTime: T, dsl: Dsl[T]): dsl.ContingentClaim =
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-
-        // daily exercise
-        val earlyExTimes = TimeLike[T].dailyStepsBetween(refTime, a.expiry)
-
         import dsl.*
         for
           s <- spot(a.underlying, a.expiry)
-          _ <- earlyExTimes
+          _ <- a.exerciseTimes
             .traverse(t =>
               dsl
                 .spot(a.underlying, t)
@@ -57,22 +55,23 @@ object AmericanVanilla:
           _ <- cashflow(max(omega * (s - a.strike), 0.0), a.ccy, a.expiry)
         yield ()
 
-  given [T: TimeLike]: FD[AmericanVanilla[T], T] =
-    new FD[AmericanVanilla[T], T]:
-      def lowerBoundary(a: AmericanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
+  given [T: TimeLike]: FD[BermudanVanilla[T], T] =
+    new FD[BermudanVanilla[T], T]:
+      def lowerBoundary(a: BermudanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
 
-      def upperBoundary(a: AmericanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
+      def upperBoundary(a: BermudanVanilla[T]): BoundaryCondition = BoundaryCondition.Linear
 
-      def terminalPayoff(a: AmericanVanilla[T]): (T, Double => Double) =
+      def terminalPayoff(a: BermudanVanilla[T]): (T, Double => Double) =
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
         (a.expiry, s => math.max(omega * (s - a.strike), 0.0))
 
-      def valueTransforms(a: AmericanVanilla[T]): List[(T, (Double, Double) => Double)] = Nil
-
-      def americanExerciseValue(a: AmericanVanilla[T]): Option[T => Double => Double] =
+      def valueTransforms(a: BermudanVanilla[T]): List[(T, (Double, Double) => Double)] =
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-        Some(t => s => math.max(omega * (s - a.strike), 0.0))
+        a.exerciseTimes.map: t =>
+          (t, (spot, value) => math.max(value, math.max(omega * (spot - a.strike), 0.0)))
+
+      def americanExerciseValue(a: BermudanVanilla[T]): Option[T => Double => Double] = None

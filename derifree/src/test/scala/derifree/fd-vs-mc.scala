@@ -42,6 +42,15 @@ class McVsFd extends munit.FunSuite:
     vol <- Gen.between(0.05, 0.8)
   yield Case(tte, strike, vol, isCall, dRate, bRate)
 
+  private val genCaseFix: Gen[Case] = for
+    tte <- Gen.constant(0.25).map(YearFraction(_))
+    isCall <- Gen.constant(true)
+    strike <- Gen.constant(100.0)
+    dRate <- Gen.constant(0.0)
+    bRate <- Gen.constant(0.0)
+    vol <- Gen.constant(0.3)
+  yield Case(tte, strike, vol, isCall, dRate, bRate)
+
   val refTime = YearFraction.zero
 
   val dirNums = Sobol.directionNumbers(1500).toTry.get
@@ -51,13 +60,15 @@ class McVsFd extends munit.FunSuite:
   val udl = "ACME"
   val ccy = Ccy.USD
 
+  // TODO: find reasonable tolerances for American MC
   test("Vanilla prices should be close".ignore):
 
     val spot = 100.0
     val divs = Nil // Dividend(refTime.plusDays(180), 3.0, 0.02) :: Nil
 
-    genCase.view.zipWithIndex
-      .take(1000)
+    genCaseFix.view.zipWithIndex
+      .take(1)
+      // .filter((_, i) => i == 0) // debug specific case
       .foreach: (c, i) =>
         val expiry = c.timeToExpiry
         val strike = c.strike
@@ -103,8 +114,19 @@ class McVsFd extends munit.FunSuite:
             else payoffs.AmericanVanilla.OptionType.Put
           )
 
+        val euRefPrice = black.price(
+          if c.isCall then black.OptionType.Call else black.OptionType.Put,
+          strike,
+          c.timeToExpiry.toDouble,
+          vol,
+          forward(expiry),
+          discount.discountFactor(expiry)
+        )
+
         val euPriceMc = euVanilla.contingentClaim(refTime, dsl).fairValue(sim, nSims).toTry.get
-        val amPriceMc = amVanilla.contingentClaim(refTime, dsl).fairValue(sim, nSims).toTry.get
+
+        val amPriceMcResult =
+          amVanilla.contingentClaim(refTime, dsl).fairValueResult(sim, nSims).toTry.get
 
         val euPriceFd = fd.feynmankac.blackScholes(
           euVanilla,
@@ -129,5 +151,12 @@ class McVsFd extends munit.FunSuite:
         )
 
         println(
-          s"i=$i, euPriceMc=$euPriceMc, euPriceFd=$euPriceFd, amPriceMc=$amPriceMc, amPriceFd=$amPriceFd"
+          show"""i=$i
+          |case=$c
+          |euRefPrice=$euRefPrice
+          |euPriceMc=$euPriceMc
+          |euPriceFd=$euPriceFd
+          |amPriceMc=${amPriceMcResult.fairValue} (exercise probs=${amPriceMcResult.putProbabilities.toList
+                 .sortBy(_(1))}, total=${amPriceMcResult.putProbabilities.toList.map(_(1)).sum})
+          |amPriceFd=$amPriceFd""".stripMargin
         )
