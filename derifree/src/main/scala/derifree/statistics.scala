@@ -16,6 +16,8 @@
 
 package derifree
 
+import scala.math.sqrt
+
 trait SummaryStatistics:
 
   def N: Int
@@ -64,7 +66,7 @@ object SummaryStatistics:
       val max0 = data.max
       val min0 = data.min
       val variance0 = sorted.map(a => (a - mean0) * (a - mean0)).sum / n
-      val stdDev0 = math.sqrt(variance0)
+      val stdDev0 = sqrt(variance0)
 
       new SummaryStatistics:
         def N: Int = n

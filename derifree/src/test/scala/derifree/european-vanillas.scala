@@ -19,6 +19,8 @@ package derifree
 import derifree.literals.*
 import derifree.syntax.*
 
+import scala.math.exp
+
 class VanillaSuite extends munit.FunSuite:
 
   val dsl = Dsl[java.time.Instant]
@@ -64,9 +66,9 @@ class VanillaSuite extends munit.FunSuite:
       yield ()
 
       val t = refTime.yearFractionTo(expiry)
-      val forward = spots(udl) * math.exp(rate * t)
+      val forward = spots(udl) * exp(rate * t)
       val ts = refTime.yearFractionTo(settle)
-      val discount = math.exp(-rate * ts)
+      val discount = exp(-rate * ts)
       val optionType = if isCall then black.OptionType.Call else black.OptionType.Put
 
       val refPrice = black.price(

@@ -17,6 +17,7 @@
 package derifree
 
 import scala.collection.immutable.ArraySeq
+import scala.math.max
 
 trait CubicSpline:
 
@@ -28,6 +29,11 @@ trait CubicSpline:
 
 object CubicSpline:
 
+  /** @param xs
+    *   strictly increasing knots
+    * @param ys
+    *   function values at knots
+    */
   def natural(xs: IndexedSeq[Double], ys: IndexedSeq[Double]): CubicSpline =
 
     require(xs.zip(xs.tail).forall(_ < _), "x values must be stricly increasing")
@@ -48,17 +54,17 @@ object CubicSpline:
 
       def apply(x: Double): Double =
         val i = xs.search(x).insertionPoint
-        val dx = x - xs(math.max(0, i - 1))
+        val dx = x - xs(max(0, i - 1))
         ((d(i) * dx + c(i)) * dx + b(i)) * dx + a(i)
 
       def fstDerivative(x: Double): Double =
         val i = xs.search(x).insertionPoint
-        val dx = x - xs(math.max(0, i - 1))
+        val dx = x - xs(max(0, i - 1))
         (3 * d(i) * dx + 2 * c(i)) * dx + b(i)
 
       def sndDerivative(x: Double): Double =
         val i = xs.search(x).insertionPoint
-        val dx = x - xs(math.max(0, i - 1))
+        val dx = x - xs(max(0, i - 1))
         6 * d(i) * dx + 2 * c(i)
 
   private def SolveTridiagSystem(

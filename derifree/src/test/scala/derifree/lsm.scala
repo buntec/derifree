@@ -20,6 +20,7 @@ import derifree.fd.*
 import derifree.syntax.*
 
 import scala.concurrent.duration.*
+import scala.math.abs
 
 class LsmSuite extends munit.FunSuite:
 
@@ -34,6 +35,7 @@ class LsmSuite extends munit.FunSuite:
         SimAm: Double
     )
 
+    // corresponds to Table 1 in the paper
     val rows = List(
       Row(36, 0.2, 1, 4.478, 3.844, 4.472),
       Row(36, 0.2, 2, 4.840, 3.763, 4.821),
@@ -145,7 +147,7 @@ class LsmSuite extends munit.FunSuite:
 
       // pass if our MC price is close to either FD price or MC price from paper
       assert(
-        math.abs(bmPriceMc.toDouble - row.SimAm) <= 0.01 || math.abs(
+        abs(bmPriceMc.toDouble - row.SimAm) <= 0.01 || abs(
           bmPriceMc.toDouble - bmPriceFd
         ) <= 0.01,
         clue

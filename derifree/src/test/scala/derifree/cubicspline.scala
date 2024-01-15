@@ -18,6 +18,9 @@ package derifree
 
 import cats.syntax.all.*
 
+import scala.math.abs
+import scala.math.max
+
 class NaturalCubicSplineSuite extends munit.FunSuite:
 
   private val N = 1000
@@ -28,7 +31,7 @@ class NaturalCubicSplineSuite extends munit.FunSuite:
     for
       n <- Gen.between(3, 100)
       x0 <- Gen.normal
-      xs <- Gen.normal.replicateA(n).map(_.map(z => math.abs(z) + 0.01).scanLeft(x0)(_ + _))
+      xs <- Gen.normal.replicateA(n).map(_.map(z => abs(z) + 0.01).scanLeft(x0)(_ + _))
       y0 <- Gen.normal
       ys <- Gen.normal.replicateA(n).map(_.scan(y0)(_ + _))
     yield Case(xs, ys)
@@ -52,7 +55,6 @@ class NaturalCubicSplineSuite extends munit.FunSuite:
         val yRange = c.ys.max - c.ys.min
         val dRange = c.xs.map(spline.fstDerivative).max - c.xs.map(spline.fstDerivative).min
         val d2Range = c.xs.map(spline.sndDerivative).max - c.xs.map(spline.sndDerivative).min
-        // println(s"xRange=$xRange, yRange=$yRange, dRange=$dRange, d2Range=$d2Range")
 
         val eps0 = 1e-4 * xRange
         val epsMin = 1e-11 * xRange
@@ -62,7 +64,7 @@ class NaturalCubicSplineSuite extends munit.FunSuite:
               .unfold(eps0): eps =>
                 val yLeft = spline(x - eps)
                 val yRight = spline(x + eps)
-                val delta = math.max(math.abs(yLeft - y), math.abs(yRight - y))
+                val delta = max(abs(yLeft - y), abs(yRight - y))
                 if eps < epsMin then None else Some(delta, eps / 2)
               .exists(_ < 1e-5 * yRange)
 
@@ -71,7 +73,7 @@ class NaturalCubicSplineSuite extends munit.FunSuite:
                 val d = spline.fstDerivative(x)
                 val dLeft = spline.fstDerivative(x - eps)
                 val dRight = spline.fstDerivative(x + eps)
-                val delta = math.max(math.abs(dLeft - d), math.abs(dRight - d))
+                val delta = max(abs(dLeft - d), abs(dRight - d))
                 if eps < epsMin then None else Some(delta, eps / 2)
               .exists(_ < 1e-5 * dRange)
 
@@ -80,7 +82,7 @@ class NaturalCubicSplineSuite extends munit.FunSuite:
                 val d2 = spline.sndDerivative(x)
                 val d2Left = spline.sndDerivative(x - eps)
                 val d2Right = spline.sndDerivative(x + eps)
-                val delta = math.max(math.abs(d2Left - d2), math.abs(d2Right - d2))
+                val delta = max(abs(d2Left - d2), abs(d2Right - d2))
                 if eps < epsMin then None else Some(delta, eps / 2)
               .exists(_ < 1e-5 * d2Range)
 

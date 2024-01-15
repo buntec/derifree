@@ -17,7 +17,7 @@
 package derifree
 package fd
 
-trait Operator:
+private[fd] trait Operator:
 
   def a: TridiagMatrix
 
@@ -85,7 +85,7 @@ trait Operator:
   def thetaStep(v: IArray[Double], dt: Double, theta: Double) =
     implicitStep(explicitStep(v, theta * dt), (1 - theta) * dt)
 
-object Operator:
+private[fd] object Operator:
 
   def apply(
       grid: IArray[Double],

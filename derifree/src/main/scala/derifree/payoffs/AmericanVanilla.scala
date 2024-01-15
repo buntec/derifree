@@ -20,6 +20,8 @@ package payoffs
 import cats.syntax.all.*
 import derifree.fd.*
 
+import scala.math.max
+
 case class AmericanVanilla[T](
     underlying: String,
     ccy: Ccy,
@@ -51,10 +53,14 @@ object AmericanVanilla:
               dsl
                 .spot(a.underlying, t)
                 .flatMap(s_t =>
-                  puttable(max(omega * (s_t - a.strike), 0.0).some.filter(_ > 0), Ccy.USD, t)
+                  puttable(
+                    dsl.max(omega * (s_t - a.strike), 0.0).some.filter(_ > 0),
+                    Ccy.USD,
+                    t
+                  )
                 )
             )
-          _ <- cashflow(max(omega * (s - a.strike), 0.0), a.ccy, a.expiry)
+          _ <- cashflow(dsl.max(omega * (s - a.strike), 0.0), a.ccy, a.expiry)
         yield ()
 
   given [T: TimeLike]: FD[AmericanVanilla[T], T] =
@@ -67,7 +73,7 @@ object AmericanVanilla:
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-        (a.expiry, s => math.max(omega * (s - a.strike), 0.0))
+        (a.expiry, s => max(omega * (s - a.strike), 0.0))
 
       def valueTransforms(a: AmericanVanilla[T]): List[(T, (Double, Double) => Double)] = Nil
 
@@ -75,4 +81,4 @@ object AmericanVanilla:
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-        Some(t => s => math.max(omega * (s - a.strike), 0.0))
+        Some(t => s => max(omega * (s - a.strike), 0.0))

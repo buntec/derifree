@@ -19,6 +19,10 @@ package fd
 
 import derifree.syntax.*
 
+import scala.math.log
+import scala.math.max
+import scala.math.min
+
 object feynmankac:
 
   def blackScholes[T: TimeLike, P: FD[_, T]](
@@ -67,11 +71,11 @@ object feynmankac:
     val sMin =
       lowerBoundary match
         case BoundaryCondition.Linear           => pLower
-        case BoundaryCondition.Dirichlet(lb, _) => math.max(pLower, lb)
+        case BoundaryCondition.Dirichlet(lb, _) => max(pLower, lb)
 
     val sMax = upperBoundary match
       case BoundaryCondition.Linear           => pUpper
-      case BoundaryCondition.Dirichlet(lb, _) => math.min(pUpper, lb)
+      case BoundaryCondition.Dirichlet(lb, _) => min(pUpper, lb)
 
     val ts = timegrid.yearFractions
     val tEps = TimeGrid.tickSize
@@ -87,8 +91,8 @@ object feynmankac:
             val t1 = refTime.plusYearFraction(yf1 + tEps)
             val t2 = refTime.plusYearFraction(yf2 - tEps)
 
-            val r = -math.log(discount.discountFactor(t1, t2)) / dt
-            val mu = math.log(forward(t2) / forward(t1)) / dt
+            val r = -log(discount.discountFactor(t1, t2)) / dt
+            val mu = log(forward(t2) / forward(t1)) / dt
 
             val v2 = valTransformByIndex
               .get(i)
@@ -188,7 +192,7 @@ object feynmankac:
               .americanExerciseValue(payoff)
               .fold(v2MinusPre): f =>
                 val exerciseAmount = f(t2)
-                (interiorPoints zip v2MinusPre).map((s, v) => math.max(exerciseAmount(s), v))
+                (interiorPoints zip v2MinusPre).map((s, v) => max(exerciseAmount(s), v))
 
             val v1 =
               if j < settings.nRannacherSteps then

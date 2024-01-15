@@ -16,6 +16,9 @@
 
 package derifree
 
+import scala.math.abs
+import scala.math.max
+
 class NormalSuite extends munit.FunSuite:
 
   test("N^{-1}(N(x)) = x"):
@@ -27,7 +30,7 @@ class NormalSuite extends munit.FunSuite:
       .take(100000)
       .foreach: (x, p) =>
         val x0 = normal.inverseCdf(p)
-        assert(math.abs(x - x0) < math.max(1e-7, 1e-6 * x), s"x=$x, p=$p, x0=$x0")
+        assert(abs(x - x0) < max(1e-7, 1e-6 * x), s"x=$x, p=$p, x0=$x0")
 
   test("N(N^{-1}(p)) = p"):
     val gen = Gen.between(0.0, 1.0)
@@ -37,4 +40,4 @@ class NormalSuite extends munit.FunSuite:
       .foreach: p =>
         val x = normal.inverseCdf(p)
         val p0 = normal.cdf(x)
-        assert(math.abs(p - p0) < 1e-7, s"x=$x, p=$p, p0=$p0")
+        assert(abs(p - p0) < 1e-7, s"x=$x, p=$p, p0=$p0")

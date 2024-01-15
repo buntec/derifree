@@ -19,7 +19,8 @@ package payoffs
 
 import cats.syntax.all.*
 import derifree.fd.*
-import derifree.syntax.*
+
+import scala.{math => smath}
 
 case class BermudanVanilla[T](
     underlying: String,
@@ -65,13 +66,13 @@ object BermudanVanilla:
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-        (a.expiry, s => math.max(omega * (s - a.strike), 0.0))
+        (a.expiry, s => smath.max(omega * (s - a.strike), 0.0))
 
       def valueTransforms(a: BermudanVanilla[T]): List[(T, (Double, Double) => Double)] =
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
         a.exerciseTimes.map: t =>
-          (t, (spot, value) => math.max(value, math.max(omega * (spot - a.strike), 0.0)))
+          (t, (spot, value) => smath.max(value, smath.max(omega * (spot - a.strike), 0.0)))
 
       def americanExerciseValue(a: BermudanVanilla[T]): Option[T => Double => Double] = None

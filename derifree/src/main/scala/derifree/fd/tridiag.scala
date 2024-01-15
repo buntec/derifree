@@ -17,7 +17,8 @@
 package derifree
 package fd
 
-case class TridiagMatrix(
+// Note: We don't put this in `derifree.math` b/c it has quirks specific to finite-differences.
+private[fd] case class TridiagMatrix(
     lowerDiagonal: IArray[
       Double
     ], // same length as diagonal with the convention that the 0-th entry is used only for Dirichlet boundary conditions in PDEs

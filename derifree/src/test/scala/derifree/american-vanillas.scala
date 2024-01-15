@@ -19,6 +19,8 @@ package derifree
 import cats.syntax.all.*
 import derifree.syntax.*
 
+import scala.math.abs
+
 class AmericanVanillaSuite extends munit.FunSuite:
 
   val dsl = Dsl[YearFraction]
@@ -65,7 +67,7 @@ class AmericanVanillaSuite extends munit.FunSuite:
 
       val europeanPut = for
         s <- spot(udl, expiry)
-        _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
+        _ <- cashflow(dsl.max(strike - s, 0.0), Ccy.USD, expiry)
       yield ()
 
       val americanPut =
@@ -77,10 +79,10 @@ class AmericanVanillaSuite extends munit.FunSuite:
             .drop(1)
             .traverse(t =>
               spot(udl, t).flatMap(s_t =>
-                puttable(max(strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
+                puttable(dsl.max(strike - s_t, 0.0).some.filter(_ > 0), Ccy.USD, t)
               )
             )
-          _ <- cashflow(max(strike - s, 0.0), Ccy.USD, expiry)
+          _ <- cashflow(dsl.max(strike - s, 0.0), Ccy.USD, expiry)
         yield ()
 
       val euPrice = europeanPut.fairValue(sim, nSims).toTry.get
@@ -91,6 +93,6 @@ class AmericanVanillaSuite extends munit.FunSuite:
 
       // println(hint)
       assert(euPrice.toDouble <= amPrice.toDouble + absTol, hint)
-      assert(math.abs(euPrice.toDouble - euPriceRef) < absTol, hint)
-      assert(math.abs(amPrice.toDouble - amPriceRef) < absTol, hint)
+      assert(abs(euPrice.toDouble - euPriceRef) < absTol, hint)
+      assert(abs(amPrice.toDouble - amPriceRef) < absTol, hint)
     }

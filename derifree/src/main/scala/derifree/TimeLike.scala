@@ -20,6 +20,7 @@ import cats.kernel.Order
 
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
+import scala.{math => smath}
 
 trait TimeLike[T] extends Order[T]:
 
@@ -88,4 +89,4 @@ object TimeLike:
       def plusSeconds(n: Long): T = TimeLike[T].addSeconds(t, n)
       def plusMillis(n: Long): T = TimeLike[T].addMillis(t, n)
       def plusYearFraction(yf: YearFraction): T =
-        TimeLike[T].addMillis(t, math.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))
+        TimeLike[T].addMillis(t, smath.round(yf.toDouble * 365 * 24 * 60 * 60 * 1000))

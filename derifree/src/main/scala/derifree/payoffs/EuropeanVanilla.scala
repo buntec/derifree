@@ -20,6 +20,8 @@ package payoffs
 import cats.syntax.all.*
 import derifree.fd.*
 
+import scala.{math => smath}
+
 case class EuropeanVanilla[T](
     underlying: String,
     ccy: Ccy,
@@ -55,7 +57,7 @@ object EuropeanVanilla:
         val omega = a.optionType match
           case OptionType.Call => 1
           case OptionType.Put  => -1
-        (a.expiry, s => math.max(omega * (s - a.strike), 0.0))
+        (a.expiry, s => smath.max(omega * (s - a.strike), 0.0))
 
       def valueTransforms(a: EuropeanVanilla[T]): List[(T, (Double, Double) => Double)] = Nil
 

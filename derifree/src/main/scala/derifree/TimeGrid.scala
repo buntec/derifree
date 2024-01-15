@@ -21,6 +21,7 @@ import cats.syntax.all.*
 import scala.collection.Searching.Found
 import scala.collection.Searching.InsertionPoint
 import scala.collection.immutable.ArraySeq
+import scala.{math => smath}
 
 import TimeGrid.*
 
@@ -56,7 +57,7 @@ object TimeGrid:
 
   val tickSize: YearFraction = YearFraction.oneSecond
 
-  def nearestTick(t: YearFraction): Tick = Tick(math.round(t / tickSize))
+  def nearestTick(t: YearFraction): Tick = Tick(smath.round(t / tickSize))
 
   def tickToYearFraction(tick: Tick): YearFraction = tickSize * tick.toLong
 
@@ -69,7 +70,7 @@ object TimeGrid:
     val knots = (includes + YearFraction.zero).toList.sorted
     val yfs = (knots zip knots.tail).foldMap: (t1, t2) =>
       val dt0 = t2 - t1
-      val k = math.round(dt0 / dt).toInt
+      val k = smath.round(dt0 / dt).toInt
       val dt1 = dt0 / k
       List.tabulate(k)(i => t1 + dt1 * i).toSet + t2
     ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted)

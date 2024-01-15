@@ -16,6 +16,8 @@
 
 package derifree
 
+import scala.math.exp
+
 trait YieldCurve[T]:
   def discountFactor(t: T): Double
   def discountFactor(t1: T, t2: T): Double
@@ -28,7 +30,7 @@ object YieldCurve:
       def discountFactor(t: T): Double = discountFactor(refTime, t)
       def discountFactor(t1: T, t2: T): Double =
         val dt = TimeLike[T].yearFractionBetween(t1, t2)
-        math.exp(-r * dt)
+        exp(-r * dt)
       def spotRate(t: T): Rate = r
 
   def zero[T]: YieldCurve[T] = new YieldCurve[T]:

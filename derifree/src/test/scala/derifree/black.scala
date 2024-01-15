@@ -20,6 +20,9 @@ import cats.Show
 import cats.derived.*
 import cats.syntax.all.*
 
+import scala.math.exp
+import scala.math.max
+
 class BlackSuite extends munit.FunSuite:
 
   private case class Case(
@@ -39,7 +42,7 @@ class BlackSuite extends munit.FunSuite:
       f <- Gen.constant(100.0)
       k <- Gen.choose(0.5, 0.8, 0.9, 1.0, 1.1, 1.2, 1.5).map(_ * f)
       t <- Gen.between(0.0001, 3.0)
-      df <- Gen.choose(-0.05, -0.02, 0.0, 0.02, 0.05, 0.1).map(r => math.exp(-r * t))
+      df <- Gen.choose(-0.05, -0.02, 0.0, 0.02, 0.05, 0.1).map(r => exp(-r * t))
     yield Case(ot, f, k, vol, df, t)
 
     val tol = 1e-6
@@ -55,7 +58,7 @@ class BlackSuite extends munit.FunSuite:
           c.df
         )
         val intrinsic =
-          math.max(0.0, c.df * c.oType.sign * (c.forward - c.strike))
+          max(0.0, c.df * c.oType.sign * (c.forward - c.strike))
         (c, price, intrinsic)
       .filter:
         case (c, price, intrinsic) => price - intrinsic > c.forward * 1e-8

@@ -22,6 +22,8 @@ import cats.derived.*
 import cats.syntax.all.*
 import derifree.syntax.*
 
+import scala.math.abs
+
 class EuropeanVanillaSuite extends munit.FunSuite:
 
   private case class Case(
@@ -98,7 +100,7 @@ class EuropeanVanillaSuite extends munit.FunSuite:
           val clue = show"i=$i, price=$price, ref=$refPrice, case=$c"
           // println(clue)
 
-          val diff = math.abs(price - refPrice)
+          val diff = abs(price - refPrice)
           assertEqualsDouble(price, refPrice, 0.01, clue)
           statsBuilder.add(diff)
 
