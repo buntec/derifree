@@ -7,6 +7,28 @@ implement a contract definition language for (equity) derivatives.
 
 *This is work in progress!*
 
+## Intro
+
+A contract is encoded as a value of type `dsl.RV[A]` where
+`dsl` is an instance of `derifree.Dsl[T]` for some time-like `T` (e.g,. `java.time.Instant`).
+The type `A` is typically `Unit` and we provide a convenient alias:
+
+```scala
+dsl.ContingentClaim = dsl.RV[Unit]
+```
+
+Returning `Unit` makes sense if you think of a contract as
+having the "side-effect" of exchanging a sequence of cash flows
+between the long and the short party over some time horizon.
+There isn't a meaningful value to return, in general.
+A generic return type `A` can still be useful. In that case `RV[A]`
+should be interpreted as a random variable taking value in `A`.
+This is used internally, e.g., to compute factors in the Longstaff-Schwartz regression.
+
+The type `dsl.RV` is a free monad. In particular, values are sequenced using `flatMap`,
+allowing us to write contracts using for-comprehensions (see the examples below).
+
+
 ## Rules
 
 When writing contracts using the derifree DSL, some rules need to be followed
@@ -16,27 +38,27 @@ to ensure pricing doesn't fail or, worse, return incorrect results.
 (`cashflow`, `spot`, etc.) should be unconditional.
 Note that this does not preclude things like conditional cash flows.
 Indeed, to model a conditional cash flow `a` at time `t`,
-write `cashflow(if p then a else 0.0, ccy, t)` instead of
+we write `cashflow(if p then a else 0.0, ccy, t)` instead of
 `Monad[RV].whenA(p)(cashflow(a, ccy, t))`.
-To give another example, if you need a certain spot observation
-`spot("ACME", t)` only conditionally, simply
-ignore its result in those cases where it isn't needed.
+To give another example, if we need a certain spot observation
+`spot("ACME", t)` only conditionally, we simply
+ignore its result when it isn't needed.
 
-The reason for this rule is that we want to be able to
-collect all meta information about the contract
-(spot/discount observations, barriers, callability, etc)
-by evaluating the contract *once* using
-an *arbitrary* realization of the underlying assets.
+    The reason for this rule is that we want to be able to
+    collect all meta information about the contract
+    (spot/discount observations, barriers, callability, etc)
+    by evaluating the contract *once* using
+    an *arbitrary* realization of the underlying assets.
 
-For the read-like keywords (`spot`, `hitProb`, `survivalProb`)
-this means simply ignoring their result when it isn't needed.
-For write-like keywords (`cashflow`, `callable`, `puttable`)
-this means using a neutral value (`0.0` or `None`).
+    For the read-like keywords (`spot`, `hitProb`, `survivalProb`)
+    this means simply ignoring their result when it isn't needed.
+    For write-like keywords (`cashflow`, `callable`, `puttable`)
+    this means using a neutral value (`0.0` or `None`).
 
-(Side note: another approach would be to "discover" missing
-information at pricing time and restart the pricing
-until we arrive at a "fix point". This would
-come at a loss in efficiency, however.)
+    (Side note: another approach would be to "discover" this
+    information at pricing time and restart the pricing
+    until we arrive at a "fix point". This would
+    come at a loss in efficiency, however.)
 
 2. Causality: the DSL doesn't prevent you from
 having a cash flow or call/early exercise at time `t1` depend on
@@ -356,3 +378,10 @@ couponBarrier.fairValue(sim, nSims)
 couponBarrierWithMemoryEffect.fairValue(sim, nSims)
 // res12: Either[Error, PV] = Right(value = 10.370530640687656)
 ```
+
+## Building
+
+`README.md` in the root directory is generated from `./docs/readme.md`
+by running `sbt docs/mdoc`. The example code in `./docs/readme.md` is a copy
+of the code in `./examples/src/main/scala/examples/readme.scala`
+and should be kept in sync.
