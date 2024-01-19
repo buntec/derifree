@@ -16,24 +16,52 @@
 
 package derifree
 
+import cats.syntax.all.*
+import derifree.syntax.*
+
 import scala.math.exp
+import scala.math.log
 
 trait YieldCurve[T]:
   def discountFactor(t: T): Double
-  def discountFactor(t1: T, t2: T): Double
+  def discountFactor(t1: T, t2: T): Double = discountFactor(t2) / discountFactor(t1)
   def spotRate(t: T): Rate
 
 object YieldCurve:
 
+  def linearRTFromDiscountFactors[T: TimeLike](
+      dfs: Seq[(T, Double)],
+      refTime: T
+  ): YieldCurve[T] =
+    val ts = dfs.map(_(0))
+    require(dfs.forall((t, _) => t > refTime), "pillars must be strictly after refTime")
+    require((ts zip ts.tail).forall(_ < _), "pillars must be strictly increasing")
+    require(dfs.forall((_, df) => df > 0), "discount factors must be positive")
+
+    val yfs =
+      0.0 +: ts.map(t => TimeLike[T].yearFractionBetween(refTime, t).toDouble).toIndexedSeq
+    val rts = 0.0 +: dfs.map((_, df) => -log(df)).toIndexedSeq
+    val interp =
+      math.LinearInterpolation.withLinearExtrapolation(yfs, rts, 0.0, rts.last / yfs.last)
+    new YieldCurve[T]:
+      def spotRate(t: T): Rate =
+        val t0 = TimeLike[T].yearFractionBetween(refTime, t).toDouble
+        val rt0 = interp(t0)
+        (rt0 / t0).rate
+
+      def discountFactor(t: T): Double =
+        val rt = interp(TimeLike[T].yearFractionBetween(refTime, t).toDouble)
+        exp(-rt)
+
   def fromContinuouslyCompoundedRate[T: TimeLike](r: Rate, refTime: T): YieldCurve[T] =
     new YieldCurve[T]:
       def discountFactor(t: T): Double = discountFactor(refTime, t)
-      def discountFactor(t1: T, t2: T): Double =
+      override def discountFactor(t1: T, t2: T): Double =
         val dt = TimeLike[T].yearFractionBetween(t1, t2)
         exp(-r * dt)
       def spotRate(t: T): Rate = r
 
   def zero[T]: YieldCurve[T] = new YieldCurve[T]:
     def discountFactor(at: T): Double = 1.0
-    def discountFactor(t1: T, t2: T): Double = 1.0
+    override def discountFactor(t1: T, t2: T): Double = 1.0
     def spotRate(t: T): Rate = Rate(0.0)
