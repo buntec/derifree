@@ -174,6 +174,43 @@ val callableBarrierReverseConvertible =
     )
   yield ()
 
+val couponBarrier =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.traverse: t =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then couponAmount else 0.0, Ccy.USD, t)
+  yield ()
+
+val couponBarrierWithMemoryEffect =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.foldLeftM(0.0): (acc, t) =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then acc + couponAmount else 0.0, Ccy.USD, t)
+            .as(if isAbove then 0 else acc + couponAmount)
+  yield ()
+
 // let's price using a simple Black-Scholes model
 
 val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
@@ -254,3 +291,9 @@ object App:
 
   // what are the probabilities of being called?
   callableBarrierReverseConvertible.callProbabilities(sim, nSims)
+
+  // should be cheaper than sum of discounted coupons
+  couponBarrier.fairValue(sim, nSims)
+
+  // should be more expensive than w/o memory, still cheaper than discounted sum of coupons
+  couponBarrierWithMemoryEffect.fairValue(sim, nSims)

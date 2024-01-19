@@ -7,6 +7,42 @@ implement a contract definition language for (equity) derivatives.
 
 *This is work in progress!*
 
+## Rules
+
+When writing contracts using the derifree DSL, some rules need to be followed
+to ensure pricing doesn't fail or, worse, return incorrect results.
+
+1. The occurrences of any of the keywords
+(`cashflow`, `spot`, etc.) should be unconditional.
+Note that this does not preclude things like conditional cash flows.
+Indeed, to model a conditional cash flow `a` at time `t`,
+write `cashflow(if p then a else 0.0, ccy, t)` instead of
+`Monad[RV].whenA(p)(cashflow(a, ccy, t))`.
+To give another example, if you need a certain spot observation
+`spot("ACME", t)` only conditionally, simply
+ignore its result in those cases where it isn't needed.
+
+The reason for this rule is that we want to be able to
+collect all meta information about the contract
+(spot/discount observations, barriers, callability, etc)
+by evaluating the contract *once* using
+an *arbitrary* realization of the underlying assets.
+
+For the read-like keywords (`spot`, `hitProb`, `survivalProb`)
+this means simply ignoring their result when it isn't needed.
+For write-like keywords (`cashflow`, `callable`, `puttable`)
+this means using a neutral value (`0.0` or `None`).
+
+(Side note: another approach would be to "discover" missing
+information at pricing time and restart the pricing
+until we arrive at a "fix point". This would
+come at a loss in efficiency, however.)
+
+2. Causality: the DSL doesn't prevent you from
+having a cash flow or call/early exercise at time `t1` depend on
+an observation at time `t2 > t1`.
+It's the user's responsibility to ensure all relationships are causal.
+
 ## Examples
 
 ```scala
@@ -167,6 +203,43 @@ val callableBarrierReverseConvertible =
     )
   yield ()
 
+val couponBarrier =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.traverse: t =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then couponAmount else 0.0, Ccy.USD, t)
+  yield ()
+
+val couponBarrierWithMemoryEffect =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.foldLeftM(0.0): (acc, t) =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then acc + couponAmount else 0.0, Ccy.USD, t)
+            .as(if isAbove then 0 else acc + couponAmount)
+  yield ()
+
 // let's price using a simple Black-Scholes model
 
 val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
@@ -212,7 +285,7 @@ val sim = models.blackscholes.simulator(
   List(aapl, msft, goog),
   correlations,
   discount,
-  fxVols,
+  Map.empty
 )
 
 // the number of Monte Carlo simulations
@@ -232,44 +305,54 @@ europeanPut.fairValue(sim, nSims)
 
 // should be more expensive than European put
 bermudanPut.fairValue(sim, nSims)
-// res3: Either[Error, PV] = Right(value = 0.07099091173390634)
+// res3: Either[Error, PV] = Right(value = 0.07095113729727867)
 
 // what are the probabilities of early exercise?
 bermudanPut.putProbabilities(sim, nSims)
 // res4: Either[Error, Map[Instant, Double]] = Right(
 //   value = Map(
-//     2024-09-22T18:00:00Z -> 0.12759788811914427,
-//     2024-03-26T18:00:00Z -> 0.06445509201330607,
-//     2024-12-21T18:00:00Z -> 0.08111819818720054,
-//     2024-06-24T18:00:00Z -> 0.11185033722952971
+//     2024-09-22T18:00:00Z -> 0.130283516953032,
+//     2024-03-26T18:00:00Z -> 0.05578783532212287,
+//     2024-12-21T18:00:00Z -> 0.07791375469222084,
+//     2024-06-24T18:00:00Z -> 0.11328470717490158
 //   )
 // )
 
 quantoEuropeanCall.fairValue(sim, nSims)
-// res5: Either[Error, PV] = Right(value = 0.11372366271297153)
+// res5: Either[Error, PV] = Left(
+//   value = Error(message = "missing vol for USDEUR")
+// )
 
 worstOfContinuousDownAndInPut.fairValue(sim, nSims)
-// res6: Either[Error, PV] = Right(value = 0.11952007594500867)
+// res6: Either[Error, PV] = Right(value = 0.11952072431608426)
 
 // should be cheaper than continuous barrier
 worstOfEuropeanDownAndInPut.fairValue(sim, nSims)
 // res7: Either[Error, PV] = Right(value = 0.09498951398431003)
 
 barrierReverseConvertible.fairValue(sim, nSims)
-// res8: Either[Error, PV] = Right(value = 106.09836341818976)
+// res8: Either[Error, PV] = Right(value = 106.09064030012115)
 
 // should be cheaper than non-callable BRC
 callableBarrierReverseConvertible.fairValue(sim, nSims)
-// res9: Either[Error, PV] = Right(value = 105.49635516689791)
+// res9: Either[Error, PV] = Right(value = 105.51905901142916)
 
 // what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
 // res10: Either[Error, Map[Instant, Double]] = Right(
 //   value = Map(
-//     2024-09-22T18:00:00Z -> 0.15909298989837337,
-//     2024-03-26T18:00:00Z -> 0.00173955504013184,
-//     2024-12-21T18:00:00Z -> 0.16666158024842068,
-//     2024-06-24T18:00:00Z -> 0.006286812952055422
+//     2024-09-22T18:00:00Z -> 0.15588854640339367,
+//     2024-03-26T18:00:00Z -> 0.0011597033600878933,
+//     2024-12-21T18:00:00Z -> 0.16977446821497238,
+//     2024-06-24T18:00:00Z -> 0.003143406476027711
 //   )
 // )
+
+// should be cheaper than sum of discounted coupons
+couponBarrier.fairValue(sim, nSims)
+// res11: Either[Error, PV] = Right(value = 8.314781740288916)
+
+// should be more expensive than w/o memory, still cheaper than discounted sum of coupons
+couponBarrierWithMemoryEffect.fairValue(sim, nSims)
+// res12: Either[Error, PV] = Right(value = 10.370530640687656)
 ```

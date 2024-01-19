@@ -7,6 +7,42 @@ implement a contract definition language for (equity) derivatives.
 
 *This is work in progress!*
 
+## Rules
+
+When writing contracts using the derifree DSL, some rules need to be followed
+to ensure pricing doesn't fail or, worse, return incorrect results.
+
+1. The occurrences of any of the keywords
+(`cashflow`, `spot`, etc.) should be unconditional.
+Note that this does not preclude things like conditional cash flows.
+Indeed, to model a conditional cash flow `a` at time `t`,
+write `cashflow(if p then a else 0.0, ccy, t)` instead of
+`Monad[RV].whenA(p)(cashflow(a, ccy, t))`.
+To give another example, if you need a certain spot observation
+`spot("ACME", t)` only conditionally, simply
+ignore its result in those cases where it isn't needed.
+
+The reason for this rule is that we want to be able to
+collect all meta information about the contract
+(spot/discount observations, barriers, callability, etc)
+by evaluating the contract *once* using
+an *arbitrary* realization of the underlying assets.
+
+For the read-like keywords (`spot`, `hitProb`, `survivalProb`)
+this means simply ignoring their result when it isn't needed.
+For write-like keywords (`cashflow`, `callable`, `puttable`)
+this means using a neutral value (`0.0` or `None`).
+
+(Side note: another approach would be to "discover" missing
+information at pricing time and restart the pricing
+until we arrive at a "fix point". This would
+come at a loss in efficiency, however.)
+
+2. Causality: the DSL doesn't prevent you from
+having a cash flow or call/early exercise at time `t1` depend on
+an observation at time `t2 > t1`.
+It's the user's responsibility to ensure all relationships are causal.
+
 ## Examples
 
 ```scala mdoc:silent
@@ -167,6 +203,43 @@ val callableBarrierReverseConvertible =
     )
   yield ()
 
+val couponBarrier =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.traverse: t =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then couponAmount else 0.0, Ccy.USD, t)
+  yield ()
+
+val couponBarrierWithMemoryEffect =
+  val relBarrier = 0.95
+  val couponAmount = 5.0
+  val couponTimes = List(90, 180, 270, 360).map(refTime.plusDays)
+  for
+    s1_0 <- spot("AAPL", refTime)
+    s2_0 <- spot("MSFT", refTime)
+    s3_0 <- spot("GOOG", refTime)
+    s1 <- spot("AAPL", expiry)
+    s2 <- spot("MSFT", expiry)
+    s3 <- spot("GOOG", expiry)
+    _ <- couponTimes.foldLeftM(0.0): (acc, t) =>
+      (spot("AAPL", t), spot("MSFT", t), spot("GOOG", t))
+        .mapN((s1_t, s2_t, s3_t) => min(s1_t / s1_0, s2_t / s2_0, s3_t / s3_0) > relBarrier)
+        .flatMap: isAbove =>
+          cashflow(if isAbove then acc + couponAmount else 0.0, Ccy.USD, t)
+            .as(if isAbove then 0 else acc + couponAmount)
+  yield ()
+
 // let's price using a simple Black-Scholes model
 
 val discount = YieldCurve.fromContinuouslyCompoundedRate(0.05.rate, refTime)
@@ -212,7 +285,7 @@ val sim = models.blackscholes.simulator(
   List(aapl, msft, goog),
   correlations,
   discount,
-  fxVols,
+  Map.empty
 )
 
 // the number of Monte Carlo simulations
@@ -247,4 +320,10 @@ callableBarrierReverseConvertible.fairValue(sim, nSims)
 
 // what are the probabilities of being called?
 callableBarrierReverseConvertible.callProbabilities(sim, nSims)
+
+// should be cheaper than sum of discounted coupons
+couponBarrier.fairValue(sim, nSims)
+
+// should be more expensive than w/o memory, still cheaper than discounted sum of coupons
+couponBarrierWithMemoryEffect.fairValue(sim, nSims)
 ```
