@@ -29,6 +29,16 @@ trait YieldCurve[T]:
 
 object YieldCurve:
 
+  def nelsonSiegel[T: TimeLike](params: rates.nelsonsiegel.Params, refTime: T): YieldCurve[T] =
+    new YieldCurve[T]:
+
+      override def discountFactor(t: T): Double = exp(
+        -TimeLike[T].yearFractionBetween(refTime, t).toDouble * spotRate(t).toDouble
+      )
+
+      override def spotRate(t: T): Rate =
+        params.spotRate(TimeLike[T].yearFractionBetween(refTime, t))
+
   def linearRTFromDiscountFactors[T: TimeLike](
       dfs: Seq[(T, Double)],
       refTime: T
