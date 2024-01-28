@@ -24,7 +24,7 @@ import derifree.syntax.*
 
 class McVsFd extends munit.FunSuite:
 
-  private case class Case(
+  case class Case(
       timeToExpiry: YearFraction,
       strike: Double,
       vol: Double,
@@ -33,7 +33,7 @@ class McVsFd extends munit.FunSuite:
       borrowRate: Double
   ) derives Show
 
-  private val genCase: Gen[Case] = for
+  val genCase: Gen[Case] = for
     tte <- Gen.between(0.01, 1.0).map(YearFraction(_))
     isCall <- Gen.boolean
     strike <- Gen.between(70.0, 150.0)

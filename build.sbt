@@ -28,6 +28,7 @@ lazy val V = new {
   val cats = "2.10.0"
   val catsTime = "0.5.1"
   val kittens = "3.2.0"
+  val circe = "0.14.6"
   val literally = "1.1.0"
   val commonsMath = "3.6.1"
   val ejml = "0.43.1"
@@ -48,6 +49,9 @@ lazy val derifree = (project in file("derifree"))
       "org.typelevel" %% "kittens" % V.kittens,
       "org.typelevel" %% "cats-time" % V.catsTime,
       "org.typelevel" %% "literally" % V.literally,
+      "io.circe" %% "circe-core" % V.circe,
+      "io.circe" %% "circe-generic" % V.circe,
+      "io.circe" %% "circe-literal" % V.circe,
       "org.apache.commons" % "commons-math3" % V.commonsMath,
       "org.ejml" % "ejml-all" % V.ejml,
       "org.scalameta" %% "munit" % V.scalameta % Test,
