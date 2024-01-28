@@ -7,6 +7,7 @@ import io.circe.generic.semiauto._
 case class Snapshot(
     timestamp: java.time.OffsetDateTime,
     underlying: UnderlyingQuote,
+    exerciseStyle: ExerciseStyle,
     exchange: Exchange,
     expiryZone: java.time.ZoneId,
     quotes: List[OptionQuote]
