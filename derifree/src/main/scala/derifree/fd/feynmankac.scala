@@ -25,6 +25,8 @@ import scala.math.min
 
 object feynmankac:
 
+  /** In the presence of cash dividends, `vol` is the vol of Buehler's "pure" process.
+    */
   def blackScholes[T: TimeLike, P: FD[_, T]](
       payoff: P,
       forward: Forward[T],
@@ -172,9 +174,12 @@ object feynmankac:
             var k = 0
             while (k < n) {
               val s = interiorPoints(k)
+              // since no dividend is payed between t1 and t2,
+              // we can use either t1 or t2 to compute the floor
+              val v = max(0, vol * (s - forward.dividendFloor(t2)))
               reaction(k) = r
               convection(k) = s * mu
-              diffusion(k) = 0.5 * s * s * vol * vol
+              diffusion(k) = 0.5 * v * v
               k += 1
             }
 
