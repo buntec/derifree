@@ -72,8 +72,8 @@ object ImpliedVol:
       discount,
       vol,
       refTime,
-      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay),
-      fd.SpatialGrid.Factory.logSinh(200, 1, strike),
+      TimeGrid.Factory.almostEquidistant(YearFraction.oneDay * 3),
+      fd.SpatialGrid.Factory.logSinh(100, 1, strike),
       fd.Settings.default
     )
 

@@ -64,6 +64,8 @@ object DiscountFitter:
         .map(derifree.YearFraction(_))
 
     override def fromSnapshot(snapshot: Snapshot, refTime: T): Either[Error, YieldCurve[T]] =
+      require(snapshot.exerciseStyle == ExerciseStyle.European, "exercise must be European")
+
       val refDate = snapshot.timestamp.atZoneSameInstant(snapshot.expiryZone).toLocalDate
       val spot = (
         snapshot.underlying.bid.filter(_ > 0),

@@ -26,13 +26,16 @@ ThisBuild / githubWorkflowPublishTargetBranches := Seq.empty
 
 lazy val V = new {
   val cats = "2.10.0"
+  val catsEffect = "3.5.3"
+  val fs2 = "3.9.4"
   val catsTime = "0.5.1"
   val kittens = "3.2.0"
   val circe = "0.14.6"
   val literally = "1.1.0"
   val commonsMath = "3.6.1"
   val ejml = "0.43.1"
-  val scalameta = "0.7.29"
+  val munit = "0.7.29"
+  val munitCE = "2.0.0-M4"
   val parallelCollection = "1.0.4"
 }
 
@@ -52,10 +55,17 @@ lazy val derifree = (project in file("derifree"))
       "io.circe" %% "circe-core" % V.circe,
       "io.circe" %% "circe-generic" % V.circe,
       "io.circe" %% "circe-literal" % V.circe,
+      "io.circe" %% "circe-parser" % V.circe,
       "org.apache.commons" % "commons-math3" % V.commonsMath,
       "org.ejml" % "ejml-all" % V.ejml,
-      "org.scalameta" %% "munit" % V.scalameta % Test,
-      "org.scala-lang.modules" %% "scala-parallel-collections" % V.parallelCollection % Test
+      "org.scalameta" %% "munit" % V.munit % Test,
+      "org.typelevel" %%% "munit-cats-effect" % V.munitCE % Test,
+      "org.scala-lang.modules" %% "scala-parallel-collections" % V.parallelCollection % Test,
+      "org.typelevel" %% "cats-effect" % V.catsEffect % Test,
+      "org.typelevel" %% "cats-effect-kernel" % V.catsEffect % Test,
+      "org.typelevel" %% "cats-effect-std" % V.catsEffect % Test,
+      "co.fs2" %% "fs2-core" % V.fs2 % Test,
+      "co.fs2" %% "fs2-io" % V.fs2 % Test
     )
   )
 
