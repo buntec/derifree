@@ -17,9 +17,8 @@
 package derifree.math
 
 import cats.syntax.all.*
-
-import org.apache.commons.math3.analysis.solvers.BrentSolver
 import org.apache.commons.math3.analysis.UnivariateFunction
+import org.apache.commons.math3.analysis.solvers.BrentSolver
 
 object RootFinding:
 
