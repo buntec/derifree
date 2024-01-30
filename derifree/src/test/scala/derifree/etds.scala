@@ -5,6 +5,8 @@ import cats.effect.IO
 import cats.syntax.all.*
 import derifree.testutils.*
 
+import derifree.syntax.*
+
 import scala.concurrent.duration.*
 
 class EtdsSuite extends munit.CatsEffectSuite:
@@ -57,4 +59,36 @@ class EtdsSuite extends munit.CatsEffectSuite:
             )
             iv.fold(_ => q.copy(impliedVol = None), vol => q.copy(impliedVol = vol.some))
       // _ <- IO.println(quotes)
+      yield ()
+
+  test("fit borrow curve from option market snapshot".only):
+    (
+      readJsonResource[IO, derifree.etd.options.Snapshot]("SPX-2024-01-29.json"),
+      readJsonResource[IO, derifree.etd.options.Snapshot]("AMZN-2024-01-29.json")
+    ).flatMapN: (spx, amzn) =>
+      val refTime = YearFraction.zero
+
+      val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
+        derifree.etd.options.DiscountFitter.Settings()
+      )
+
+      val borrowFitter = derifree.etd.options.BorrowFitter[YearFraction](
+        derifree.etd.options.BorrowFitter.Settings()
+      )
+
+      val initialBorrow = YieldCurve.zero[YearFraction]
+
+      val divs = Nil
+
+      for
+        spot <- IO.fromOption(
+          (amzn.underlying.bid, amzn.underlying.ask).mapN((bid, ask) => (bid + ask) / 2)
+        )(Exception("missing spot"))
+        discount <- IO.fromEither(discountFitter.fromSnapshot(spx, refTime))
+        forward = Forward[YearFraction](spot.toDouble, divs, discount, initialBorrow)
+        borrow <- IO.fromEither(borrowFitter.fromSnapshot(amzn, forward, discount, refTime))
+        _ <- List(1, 7, 30, 90, 180, 365, 2 * 365, 3 * 365).traverse_(d =>
+          val r = borrow.spotRate(refTime.plusDays(d))
+          IO.println(s"d=$d, r=$r")
+        )
       yield ()
