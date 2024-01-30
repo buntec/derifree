@@ -28,6 +28,14 @@ trait Forward[T]:
 
   def dividendFloor(t: T): Double
 
+  def withBorrow(borrow: YieldCurve[T]): Forward[T]
+
+  def withDiscount(discount: YieldCurve[T]): Forward[T]
+
+  def withDivs(divs: List[Dividend[T]]): Forward[T]
+
+  def withSpot(spot: Double): Forward[T]
+
 object Forward:
 
   def apply[T: TimeLike](
@@ -86,10 +94,25 @@ object Forward:
     val s0Star: Double = spot0 - sumOfAlphaStar
 
     new Forward[T]:
-      def spot: Double = spot0
-      def apply(t: T): Double = s0Star * r(t) + d(t)
-      def dividendFloor(t: T): Double = d(t)
-      def dividends: List[Dividend[T]] = divs
+      override def spot: Double = spot0
+
+      override def apply(t: T): Double = s0Star * r(t) + d(t)
+
+      override def dividendFloor(t: T): Double = d(t)
+
+      override def dividends: List[Dividend[T]] = divs
+
+      override def withDivs(newDivs: List[Dividend[T]]): Forward[T] =
+        referenceImpl[T](spot, newDivs, discount, borrow)
+
+      override def withBorrow(newBorrow: YieldCurve[T]): Forward[T] =
+        referenceImpl[T](spot, divs, discount, newBorrow)
+
+      override def withDiscount(newDiscount: YieldCurve[T]): Forward[T] =
+        referenceImpl[T](spot, divs, newDiscount, borrow)
+
+      override def withSpot(newSpot: Double): Forward[T] =
+        referenceImpl[T](newSpot, divs, discount, borrow)
 
   private[derifree] def impl[T: TimeLike](
       spot0: Double,
@@ -142,7 +165,22 @@ object Forward:
     val s0Star: Double = spot0 - sumOfAlphaStar
 
     new Forward[T]:
-      def spot: Double = spot0
-      def apply(t: T): Double = s0Star * r(t) + d(t)
-      def dividendFloor(t: T): Double = d(t)
-      def dividends: List[Dividend[T]] = divs
+      override def spot: Double = spot0
+
+      override def apply(t: T): Double = s0Star * r(t) + d(t)
+
+      override def dividendFloor(t: T): Double = d(t)
+
+      override def dividends: List[Dividend[T]] = divs
+
+      override def withDivs(newDivs: List[Dividend[T]]): Forward[T] =
+        impl[T](spot, newDivs, discount, borrow)
+
+      override def withBorrow(newBorrow: YieldCurve[T]): Forward[T] =
+        impl[T](spot, divs, discount, newBorrow)
+
+      override def withDiscount(newDiscount: YieldCurve[T]): Forward[T] =
+        impl[T](spot, divs, newDiscount, borrow)
+
+      override def withSpot(newSpot: Double): Forward[T] =
+        impl[T](newSpot, divs, discount, borrow)
