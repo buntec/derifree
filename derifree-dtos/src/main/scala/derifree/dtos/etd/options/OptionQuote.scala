@@ -14,34 +14,48 @@
  * limitations under the License.
  */
 
-package derifree.etd.options
+package derifree.dtos.etd.options
 
 import io.circe.Codec
 import io.circe.generic.semiauto._
 
+import OptionQuote.*
+
 case class OptionQuote(
-    tpe: OptionType,
+    optionType: OptionType,
     strike: BigDecimal,
     expiry: java.time.LocalDate,
-    last: Option[BigDecimal],
-    lastTrade: Option[java.time.OffsetDateTime],
     bid: BigDecimal,
     ask: BigDecimal,
+    last: Option[BigDecimal],
+    lastTrade: Option[java.time.OffsetDateTime],
     volume: Option[Int],
     openInterest: Option[Int],
     delta: Option[Double],
     gamma: Option[Double],
-    impliedVol: Option[Double]
+    impliedVol: Option[ImpliedVol]
 ):
   def mid: BigDecimal = (bid + ask) / 2
 
   def spread: BigDecimal = bid - ask
 
-  def isCall: Boolean = tpe match
+  def isCall: Boolean = optionType match
     case OptionType.Call => true
     case OptionType.Put  => false
 
   def isPut: Boolean = !isCall
 
 object OptionQuote:
+
+  // The `mid` may or may not be equal to the average of `bid` and `ask` and is
+  // therefore not necessarily redundant.
+  case class ImpliedVol(
+      bid: Option[Double] = None,
+      mid: Option[Double] = None,
+      ask: Option[Double] = None
+  )
+
+  object ImpliedVol:
+    given Codec[ImpliedVol] = deriveCodec[ImpliedVol]
+
   given Codec[OptionQuote] = deriveCodec[OptionQuote]

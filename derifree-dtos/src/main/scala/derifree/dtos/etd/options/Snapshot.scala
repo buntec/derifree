@@ -14,18 +14,21 @@
  * limitations under the License.
  */
 
-package derifree.etd.options
+package derifree.dtos
+package etd
+package options
 
 import io.circe.Codec
 import io.circe.generic.semiauto._
 
-case class UnderlyingQuote(
-    ticker: Ticker,
-    last: BigDecimal,
-    lastTrade: Option[java.time.OffsetDateTime],
-    bid: Option[BigDecimal],
-    ask: Option[BigDecimal]
+case class Snapshot(
+    timestamp: java.time.OffsetDateTime,
+    underlying: UnderlyingQuote,
+    exerciseStyle: ExerciseStyle,
+    exchange: Exchange,
+    expiryZone: java.time.ZoneId,
+    quotes: List[OptionQuote]
 )
 
-object UnderlyingQuote:
-  given Codec[UnderlyingQuote] = deriveCodec[UnderlyingQuote]
+object Snapshot:
+  given Codec[Snapshot] = deriveCodec[Snapshot]

@@ -14,12 +14,7 @@
  * limitations under the License.
  */
 
-package derifree.etd.options
+package derifree.dtos.etd.options
 
-enum Ticker:
-  case Stock(name: String) extends Ticker
-  case Index(name: String) extends Ticker
-
-  def symbol: String = this match
-    case Stock(name) => name
-    case Index(name) => name
+enum ExerciseStyle:
+  case American, European

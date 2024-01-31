@@ -14,20 +14,12 @@
  * limitations under the License.
  */
 
-package derifree.etd
-package options
+package derifree.dtos.etd.options
 
-import io.circe.Codec
-import io.circe.generic.semiauto._
+enum Ticker:
+  case Stock(name: String) extends Ticker
+  case Index(name: String) extends Ticker
 
-case class Snapshot(
-    timestamp: java.time.OffsetDateTime,
-    underlying: UnderlyingQuote,
-    exerciseStyle: ExerciseStyle,
-    exchange: Exchange,
-    expiryZone: java.time.ZoneId,
-    quotes: List[OptionQuote]
-)
-
-object Snapshot:
-  given Codec[Snapshot] = deriveCodec[Snapshot]
+  def symbol: String = this match
+    case Stock(name) => name
+    case Index(name) => name

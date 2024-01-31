@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package derifree.etd.options
+package derifree.dtos.etd.options
 
-enum ExerciseStyle:
-  case American, European
+enum OptionType:
+  case Call, Put

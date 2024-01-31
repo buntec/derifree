@@ -19,6 +19,7 @@ package etd
 package options
 
 import cats.syntax.all.*
+import derifree.dtos.etd.options.*
 
 import scala.math.abs
 import scala.math.log

@@ -3,6 +3,8 @@ package derifree
 import cats.Show
 import cats.effect.IO
 import cats.syntax.all.*
+import derifree.dtos.etd.options.OptionQuote
+import derifree.dtos.etd.options.Snapshot
 import derifree.syntax.*
 import derifree.testutils.*
 
@@ -13,7 +15,7 @@ class EtdsSuite extends munit.CatsEffectSuite:
   override def munitIOTimeout: Duration = 5.minutes
 
   test("fit USD discount curve from SPX snapshot"):
-    readJsonResource[IO, derifree.etd.options.Snapshot]("SPX-2024-01-29.json")
+    readJsonResource[IO, Snapshot]("SPX-2024-01-29.json")
       .flatMap: snapshot =>
         val fitter = derifree.etd.options.DiscountFitter[YearFraction](
           derifree.etd.options.DiscountFitter.Settings()
@@ -27,8 +29,8 @@ class EtdsSuite extends munit.CatsEffectSuite:
 
   test("compute implied vols from option market snapshot"):
     (
-      readJsonResource[IO, derifree.etd.options.Snapshot]("SPX-2024-01-29.json"),
-      readJsonResource[IO, derifree.etd.options.Snapshot]("AMZN-2024-01-29.json")
+      readJsonResource[IO, Snapshot]("SPX-2024-01-29.json"),
+      readJsonResource[IO, Snapshot]("AMZN-2024-01-29.json")
     ).flatMapN: (spx, amzn) =>
       val refTime = YearFraction.zero
       val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
@@ -56,14 +58,17 @@ class EtdsSuite extends munit.CatsEffectSuite:
               forward,
               discount
             )
-            iv.fold(_ => q.copy(impliedVol = None), vol => q.copy(impliedVol = vol.some))
+            iv.fold(
+              _ => q.copy(impliedVol = None),
+              vol => q.copy(impliedVol = OptionQuote.ImpliedVol().copy(mid = vol.some).some)
+            )
       // _ <- IO.println(quotes)
       yield ()
 
   test("fit borrow curve from option market snapshot".only):
     (
-      readJsonResource[IO, derifree.etd.options.Snapshot]("SPX-2024-01-29.json"),
-      readJsonResource[IO, derifree.etd.options.Snapshot]("AMZN-2024-01-29.json")
+      readJsonResource[IO, Snapshot]("SPX-2024-01-29.json"),
+      readJsonResource[IO, Snapshot]("AMZN-2024-01-29.json")
     ).flatMapN: (spx, amzn) =>
       val refTime = YearFraction.zero
 

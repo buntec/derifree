@@ -3,6 +3,7 @@ package etd
 package options
 
 import cats.syntax.all.*
+import derifree.dtos.etd.options.*
 import derifree.syntax.*
 
 import scala.math.abs

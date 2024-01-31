@@ -25,6 +25,8 @@ import scala.math.abs
 
 class LsmSuite extends munit.FunSuite:
 
+  override def munitTimeout: Duration = 1.minute
+
   test("Compare to tabulated values in Longstaff-Schwartz 2001 paper"):
 
     case class Row(

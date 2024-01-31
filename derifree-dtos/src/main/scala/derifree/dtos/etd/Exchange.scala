@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package derifree.etd
+package derifree.dtos.etd
 
 enum Exchange(val mic: String):
   case CBOE extends Exchange("XCBO")
