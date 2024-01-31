@@ -78,6 +78,27 @@ object TimeLike:
       def addMillis(t: Instant, millis: Long): Instant =
         t.plus(java.time.Duration.ofMillis(millis))
 
+  given TimeLike[java.time.OffsetDateTime] =
+    new TimeLike[java.time.OffsetDateTime]:
+
+      def compare(x: java.time.OffsetDateTime, y: java.time.OffsetDateTime): Int =
+        if x.equals(y) then 0
+        else if x.isBefore(y) then -1
+        else 1
+
+      def yearFractionBetween(
+          x: java.time.OffsetDateTime,
+          y: java.time.OffsetDateTime
+      ): YearFraction =
+        YearFraction(
+          java.time.Duration
+            .between(x, y)
+            .toMillis / (1000.0 * 60 * 60 * 24 * 365)
+        )
+
+      def addMillis(t: java.time.OffsetDateTime, millis: Long): java.time.OffsetDateTime =
+        t.plus(java.time.Duration.ofMillis(millis))
+
   trait Syntax:
 
     given orderingForTimeLike[T: TimeLike]: Ordering[T] = Order[T].toOrdering
