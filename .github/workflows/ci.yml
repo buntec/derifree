@@ -30,7 +30,7 @@ jobs:
         os: [ubuntu-latest]
         scala: [3]
         java: [temurin@11]
-        project: [rootJVM]
+        project: [rootJS, rootJVM]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -58,6 +58,10 @@ jobs:
       - name: Check headers and formatting
         if: matrix.java == 'temurin@11' && matrix.os == 'ubuntu-latest'
         run: sbt 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' headerCheckAll scalafmtCheckAll 'project /' scalafmtSbtCheck
+
+      - name: scalaJSLink
+        if: matrix.project == 'rootJS'
+        run: sbt 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' Test/scalaJSLinkerResult
 
       - name: Test
         run: sbt 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' test
@@ -100,5 +104,5 @@ jobs:
       - name: Submit Dependencies
         uses: scalacenter/sbt-dependency-submission@v2
         with:
-          modules-ignore: examples_3 rootjs_3 rootjvm_3 rootnative_3
+          modules-ignore: examples_3 rootjs_3 docs_3 rootjvm_3 rootnative_3
           configs-ignore: test scala-tool scala-doc-tool test-internal
