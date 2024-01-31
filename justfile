@@ -11,10 +11,10 @@ check-deps:
   sbt dependencyUpdates
 
 test:
-  sbt 'derifree/test'
+  sbt 'test'
 
 watch:
-  sbt '~derifree/compile'
+  sbt '~compile'
 
 publish-local:
-  sbt 'derifree/publishLocal'
+  sbt 'publishLocal'
