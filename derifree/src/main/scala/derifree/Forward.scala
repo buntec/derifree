@@ -18,7 +18,7 @@ package derifree
 
 import cats.syntax.all.*
 
-trait Forward[T]:
+sealed trait Forward[T]:
 
   def spot: Double
 
@@ -36,6 +36,13 @@ trait Forward[T]:
 
   def withSpot(spot: Double): Forward[T]
 
+  final def convertToPropDivs: Forward[T] =
+    withDivs(dividends.map: d =>
+      val f = apply(d.exDiv)
+      val prop = (d.cash + d.prop * f) / (d.cash + f)
+      d.copy(cash = 0.0, prop = prop)
+    )
+
 object Forward:
 
   def apply[T: TimeLike](
@@ -43,7 +50,9 @@ object Forward:
       divs: List[Dividend[T]],
       discount: YieldCurve[T],
       borrow: YieldCurve[T]
-  ): Forward[T] = impl(spot, divs, discount, borrow)
+  ): Forward[T] =
+    if divs.forall(_.cash == 0.0) then propDivsOnlyImpl(spot, divs, discount, borrow)
+    else impl(spot, divs, discount, borrow)
 
   // reference implementation: correct but slower
   private[derifree] def referenceImpl[T: TimeLike](
@@ -114,6 +123,48 @@ object Forward:
       override def withSpot(newSpot: Double): Forward[T] =
         referenceImpl[T](newSpot, divs, discount, borrow)
 
+  private[derifree] def propDivsOnlyImpl[T: TimeLike](
+      spot0: Double,
+      divs: List[Dividend[T]],
+      discount: YieldCurve[T],
+      borrow: YieldCurve[T]
+  ): Forward[T] =
+    require(divs.forall(_.cash == 0.0), "cash components must be zero")
+    val divsArr = divs.toArray
+    val nDivs = divsArr.length
+
+    def r(t: T): Double =
+      var i = 0
+      var acc = 1.0
+      while (i < nDivs && divsArr(i).exDiv <= t) {
+        acc *= (1 - divsArr(i).prop)
+        i += 1
+      }
+      acc * borrow.discountFactor(t) / discount.discountFactor(t)
+
+    new Forward[T]:
+      override def spot: Double = spot0
+
+      override def apply(t: T): Double = spot0 * r(t)
+
+      override def dividendFloor(t: T): Double = 0.0
+
+      override def dividends: List[Dividend[T]] = divs
+
+      override def withDivs(newDivs: List[Dividend[T]]): Forward[T] =
+        if newDivs.forall(_.cash == 0.0) then
+          propDivsOnlyImpl[T](spot, newDivs, discount, borrow)
+        else impl[T](spot, newDivs, discount, borrow)
+
+      override def withBorrow(newBorrow: YieldCurve[T]): Forward[T] =
+        propDivsOnlyImpl[T](spot, divs, discount, newBorrow)
+
+      override def withDiscount(newDiscount: YieldCurve[T]): Forward[T] =
+        propDivsOnlyImpl[T](spot, divs, newDiscount, borrow)
+
+      override def withSpot(newSpot: Double): Forward[T] =
+        propDivsOnlyImpl[T](newSpot, divs, discount, borrow)
+
   private[derifree] def impl[T: TimeLike](
       spot0: Double,
       divs: List[Dividend[T]],
@@ -174,7 +225,9 @@ object Forward:
       override def dividends: List[Dividend[T]] = divs
 
       override def withDivs(newDivs: List[Dividend[T]]): Forward[T] =
-        impl[T](spot, newDivs, discount, borrow)
+        if newDivs.forall(_.cash == 0.0) then
+          propDivsOnlyImpl[T](spot, newDivs, discount, borrow)
+        else impl[T](spot, newDivs, discount, borrow)
 
       override def withBorrow(newBorrow: YieldCurve[T]): Forward[T] =
         impl[T](spot, divs, discount, newBorrow)

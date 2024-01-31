@@ -2,10 +2,11 @@ package derifree
 package etd
 package options
 
+import cats.syntax.all.*
 import derifree.syntax.*
 
-import cats.syntax.all.*
-import scala.math.{abs, exp}
+import scala.math.abs
+import scala.math.exp
 
 /** Fits borrow curves based on put-call parity of option implied vols. */
 trait BorrowFitter[T]:

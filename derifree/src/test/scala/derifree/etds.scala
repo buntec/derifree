@@ -3,9 +3,8 @@ package derifree
 import cats.Show
 import cats.effect.IO
 import cats.syntax.all.*
-import derifree.testutils.*
-
 import derifree.syntax.*
+import derifree.testutils.*
 
 import scala.concurrent.duration.*
 

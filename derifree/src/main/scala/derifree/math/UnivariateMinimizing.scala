@@ -1,15 +1,14 @@
 package derifree
 package math
 
-import org.apache.commons.math3.optim.univariate.BrentOptimizer
+import cats.syntax.all.*
+import org.apache.commons.math3.analysis.UnivariateFunction
+import org.apache.commons.math3.optim.MaxEval
+import org.apache.commons.math3.optim.MaxIter
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType
+import org.apache.commons.math3.optim.univariate.BrentOptimizer
 import org.apache.commons.math3.optim.univariate.SearchInterval
 import org.apache.commons.math3.optim.univariate.UnivariateObjectiveFunction
-import org.apache.commons.math3.analysis.UnivariateFunction
-
-import cats.syntax.all.*
-import org.apache.commons.math3.optim.MaxIter
-import org.apache.commons.math3.optim.MaxEval
 
 object UnivariateMinimizing:
 
