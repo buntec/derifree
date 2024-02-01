@@ -43,7 +43,7 @@ object PV {
   given Eq[PV] = doubleEq
 
   extension (pv: PV)
-    private[derifree] def toDouble: Double = pv
+    def toDouble: Double = pv
     def *(a: Double): PV = a * pv
     def +(rhs: PV): PV = pv + rhs
     def /(n: Int): PV = pv / n
@@ -58,7 +58,7 @@ object Rate:
   def apply(r: Double): Rate = r
 
   extension (r: Rate)
-    private[derifree] def toDouble: Double = r
+    def toDouble: Double = r
     def *(t: YearFraction): Double = r * t
     def unary_- : Rate = -r
 
@@ -81,7 +81,7 @@ object YearFraction:
   given Show[YearFraction] = doubleShow
 
   extension (t: YearFraction)
-    private[derifree] def toDouble: Double = t
+    def toDouble: Double = t
     def -(rhs: YearFraction): YearFraction = t - rhs
     def <(rhs: YearFraction): Boolean = t < rhs
     def +(rhs: YearFraction): YearFraction = t + rhs
@@ -113,7 +113,7 @@ object Var:
   def apply(v: Double): Var = v
 
   extension (v: Var)
-    private[derifree] def toDouble: Double = v
+    def toDouble: Double = v
     def +(rhs: Var): Var = v + rhs
     def *(rhs: YearFraction): Double = v * rhs
 
@@ -125,7 +125,7 @@ object Vol:
   def apply(v: Double): Vol = v
 
   extension (v: Vol)
-    private[derifree] def toDouble: Double = v
+    def toDouble: Double = v
     def +(rhs: Vol): Vol = v + rhs
     def *(rhs: Vol): Var = v * rhs
 
