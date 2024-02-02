@@ -19,11 +19,14 @@ package derifree.math
 import cats.syntax.all.*
 import derifree.Gen
 
+import scala.math.abs
+
 class LeastSquaresSuite extends munit.FunSuite:
 
   private case class Case(
       a: IndexedSeq[IndexedSeq[Double]], // design matrix
-      y: IndexedSeq[Double]
+      y: IndexedSeq[Double],
+      lambda: Double // ridge penalty
   )
 
   private val genCase: Gen[Case] = for
@@ -35,18 +38,34 @@ class LeastSquaresSuite extends munit.FunSuite:
       .map(row => if intercept then (1.0 :: row) else row)
       .replicateA(n)
     y <- Gen.normal.replicateA(n)
-  yield Case(a.map(_.toIndexedSeq).toIndexedSeq, y.toIndexedSeq)
+    lambda <- Gen.normal.map(abs)
+  yield Case(a.map(_.toIndexedSeq).toIndexedSeq, y.toIndexedSeq, lambda)
 
-  test("different implementations should give identical results"):
+  test("OLS: different implementations should give identical results"):
     genCase.view
       .take(500)
       .zipWithIndex
       .foreach: (c, i) =>
         val r1 = LeastSquares.ejml.ols(c.a, c.y).toTry.get
         val r2 = LeastSquares.commonsmath.ols(c.a, c.y).toTry.get
-        val coeffs1 = r1.coefficients
-        val coeffs2 = r2.coefficients
-        (coeffs1 zip coeffs2).foreach: (b1, b2) =>
+        assertEqualsDouble(r1.normOfResiduals, r2.normOfResiduals, 1e-10)
+        (r1.coefficients zip r2.coefficients).foreach: (b1, b2) =>
           val clue = s"i=$i, b1=$b1, b2=$b2"
-          // println(clue)
+          assertEqualsDouble(b1, b2, 1e-10, clue)
+
+  test("ridge regression: different implementations should give identical results"):
+    genCase.view
+      .take(500)
+      .zipWithIndex
+      .foreach: (c, i) =>
+        val r0 = LeastSquares.ejml.ols(c.a, c.y).toTry.get
+        val r1 = LeastSquares.ejml.ridge(c.a, c.y, c.lambda).toTry.get
+        val r2 = LeastSquares.commonsmath.ridge(c.a, c.y, c.lambda).toTry.get
+        assertEqualsDouble(r1.normOfResiduals, r2.normOfResiduals, 1e-10)
+        assert(
+          r0.normOfResiduals <= r1.normOfResiduals + 1e-10,
+          s"ridge penalty lambda=${c.lambda} should increase error: ${r0.normOfResiduals}, ${r1.normOfResiduals}"
+        )
+        (r1.coefficients zip r2.coefficients).foreach: (b1, b2) =>
+          val clue = s"i=$i, b1=$b1, b2=$b2"
           assertEqualsDouble(b1, b2, 1e-10, clue)

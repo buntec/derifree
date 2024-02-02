@@ -44,16 +44,19 @@ object nelsonsiegel:
 
   def fitByOlsOnLambdaGrid(
       spotRates: List[(YearFraction, Rate)],
-      lambdas: List[Double] = defaultLambdaGrid
+      lambdas: List[Double] = defaultLambdaGrid,
+      ridgePenalty: Double = 0
   ): Either[Error, Params] =
     Either.raiseUnless(lambdas.nonEmpty)(Error.BadInputs("lambdas must not be empty")) *>
       lambdas
         .traverse: lambda =>
-          val ols = math.LeastSquares.apply
+          val ls = math.LeastSquares.apply
           val a = spotRates.map: (t, _) =>
             List(1.0, f1(t, lambda), f2(t, lambda))
           val y = spotRates.map(_(1).toDouble)
-          ols.ols(a, y).tupleLeft(lambda)
+          (if ridgePenalty > 0 then ls.ridge(a, y, ridgePenalty) else ls.ols(a, y)).tupleLeft(
+            lambda
+          )
         .map: results =>
           val (lambda, result) = results.minBy(_(1).normOfResiduals)
           val coeffs = result.coefficients

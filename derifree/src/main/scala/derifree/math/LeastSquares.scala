@@ -17,6 +17,8 @@
 package derifree.math
 
 import cats.syntax.all.*
+import org.apache.commons.math3.linear.LUDecomposition
+import org.apache.commons.math3.linear.MatrixUtils
 import org.apache.commons.math3.stat.regression.OLSMultipleLinearRegression
 import org.ejml.data.DMatrixRMaj
 import org.ejml.dense.row.CommonOps_DDRM
@@ -36,6 +38,8 @@ trait LeastSquares:
     */
   def ols(a: Seq[Seq[Double]], y: Seq[Double]): Either[Error, Result]
 
+  def ridge(a: Seq[Seq[Double]], y: Seq[Double], lambda: Double): Either[Error, Result]
+
 object LeastSquares:
 
   final case class Result(
@@ -52,6 +56,35 @@ object LeastSquares:
 
   /** Implementation based on Apache commons math. */
   private[math] def commonsmath: LeastSquares = new LeastSquares:
+
+    def ridge(
+        a: Seq[Seq[Double]],
+        y: Seq[Double],
+        lambda: Double
+    ): Either[Error, Result] =
+      for
+        _ <- Either.raiseWhen(a.isEmpty)(Error.BadInputs("empty rows"))
+        _ <- Either.raiseWhen(lambda < 0)(Error.BadInputs("lambda must be non-negative"))
+        result <- Either
+          .catchNonFatal:
+            val X = MatrixUtils.createRealMatrix(a.map(_.toArray).toArray)
+            val y0 = MatrixUtils.createRealVector(y.toArray)
+            val XtX = X.transpose.multiply(X)
+            val lambdaI =
+              MatrixUtils.createRealIdentityMatrix(XtX.getRowDimension).scalarMultiply(lambda)
+            val c = XtX.add(lambdaI)
+            val cInverse = new LUDecomposition(c).getSolver.getInverse()
+            val d = X.preMultiply(y0)
+            val beta = cInverse.transpose.preMultiply(d)
+            val residuals = X.transpose.preMultiply(beta).subtract(y0)
+            Result(
+              beta.toArray.toIndexedSeq,
+              residuals.toArray.toIndexedSeq,
+              residuals.getNorm
+            )
+          .leftMap(t => Error.BadInputs(t.getMessage))
+      yield result
+
     def ols(a: Seq[Seq[Double]], y: Seq[Double]): Either[Error, Result] =
       val lr = new OLSMultipleLinearRegression
       lr.setNoIntercept(true)
@@ -77,6 +110,32 @@ object LeastSquares:
 
   /** Implementation based on ejml. */
   private[math] def ejml: LeastSquares = new LeastSquares:
+
+    def ridge(a: Seq[Seq[Double]], y: Seq[Double], lambda: Double): Either[Error, Result] =
+      for
+        _ <- Either.raiseWhen(a.isEmpty)(Error.BadInputs("empty rows"))
+        _ <- Either.raiseWhen(lambda < 0)(Error.BadInputs("lambda must be non-negative"))
+        result <- Either
+          .catchNonFatal:
+            val X = new DMatrixRMaj(a.map(_.toArray).toArray)
+            val y0 = new DMatrixRMaj(y.length, 1, true, y*)
+            val XtX = CommonOps_DDRM.multTransA(X, X, null)
+            val lambdaI = CommonOps_DDRM.identity(XtX.getNumCols)
+            CommonOps_DDRM.scale(lambda, lambdaI)
+            val c = CommonOps_DDRM.add(XtX, lambdaI, null)
+            CommonOps_DDRM.invert(c)
+            val beta = CommonOps_DDRM.mult(c, CommonOps_DDRM.multTransA(X, y0, null), null)
+            val residuals =
+              CommonOps_DDRM.subtract(CommonOps_DDRM.mult(X, beta, null), y0, null)
+            val norm = NormOps_DDRM.normP2(residuals)
+            Result(
+              beta.data.toIndexedSeq,
+              residuals.data.toIndexedSeq,
+              norm
+            )
+          .leftMap(t => Error.BadInputs(t.toString))
+      yield result
+
     def ols(a: Seq[Seq[Double]], y: Seq[Double]): Either[Error, Result] =
       for
         _ <- Either.raiseWhen(a.isEmpty)(Error.BadInputs("empty rows"))
