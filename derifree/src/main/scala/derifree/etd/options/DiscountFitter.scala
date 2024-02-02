@@ -49,16 +49,19 @@ object DiscountFitter:
       /** Discount factors extracted from very short expiries are too noisy. This sets the
         * shortest expiry (in days) we want to fit
         */
-      nCutoffDays: Int = 30
+      nCutoffDays: Int = 30,
+
+      /** Lambda grid for Nelson-Siegel fit. */
+      lambdaGrid: List[Double] = List(0.027, 0.082, 0.16, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0),
+
+      /** Ridge regression penalty `lambda`. */
+      ridgePenalty: Double = 0
   )
 
   def apply[T: TimeLike](settings: Settings) = new DiscountFitter[T]:
 
     private def daysBetween(d1: java.time.LocalDate, d2: java.time.LocalDate): Long =
       java.time.temporal.ChronoUnit.DAYS.between(d1, d2)
-
-    private val lambdaGrid =
-      List(0.027, 0.082, 0.16, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0)
 
     private val benchmarkYfs =
       List(0.027, 0.082, 0.16, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0)
@@ -183,7 +186,11 @@ object DiscountFitter:
           val r = -log(df) / yf
           derifree.YearFraction(yf) -> derifree.Rate(r)
 
-        derifree.rates.nelsonsiegel.fitByOlsOnLambdaGrid(spotRates, lambdaGrid)
+        derifree.rates.nelsonsiegel.fitByOlsOnLambdaGrid(
+          spotRates,
+          settings.lambdaGrid,
+          settings.ridgePenalty
+        )
 
       def go(
           params1: Option[derifree.rates.nelsonsiegel.Params],
