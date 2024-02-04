@@ -21,9 +21,10 @@ import cats.syntax.all.*
 import scala.collection.Searching.Found
 import scala.collection.Searching.InsertionPoint
 import scala.collection.immutable.ArraySeq
-import scala.{math => smath}
+import scala.math.{min, max, round, pow}
 
 import TimeGrid.*
+import scala.collection.View
 
 opaque type TimeGrid = IndexedSeq[Tick]
 
@@ -48,16 +49,27 @@ object TimeGrid:
   self =>
 
   trait Factory:
+
     def apply(includes: Set[YearFraction]): TimeGrid
 
   object Factory:
+
     def almostEquidistant(dt: YearFraction): Factory = new Factory:
       def apply(includes: Set[YearFraction]): TimeGrid =
         self.almostEquidistant(dt, includes)
 
+    def powerRule(
+        alpha: Double,
+        beta: Double,
+        dtMin: Double,
+        dtMax: Double
+    ): Factory = new Factory:
+      def apply(includes: Set[YearFraction]): TimeGrid =
+        self.powerRule(alpha, beta, dtMin, dtMax, includes)
+
   val tickSize: YearFraction = YearFraction.oneSecond
 
-  def nearestTick(t: YearFraction): Tick = Tick(smath.round(t / tickSize))
+  def nearestTick(t: YearFraction): Tick = Tick(round(t / tickSize))
 
   def tickToYearFraction(tick: Tick): YearFraction = tickSize * tick.toLong
 
@@ -70,7 +82,25 @@ object TimeGrid:
     val knots = (includes + YearFraction.zero).toList.sorted
     val yfs = (knots zip knots.tail).foldMap: (t1, t2) =>
       val dt0 = t2 - t1
-      val k = smath.round(dt0 / dt).toInt
+      val k = round(dt0 / dt).toInt
       val dt1 = dt0 / k
       List.tabulate(k)(i => t1 + dt1 * i).toSet + t2
+    ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted)
+
+  def powerRule(
+      alpha: Double,
+      beta: Double,
+      dtMin: Double,
+      dtMax: Double,
+      includes: Set[YearFraction]
+  ): TimeGrid =
+    val knots = (includes + YearFraction.zero).toList.sorted
+    val yfs = (knots zip knots.tail).foldMap: (t1, t2) =>
+      View
+        .unfold(t1) { t =>
+          val tau = beta * pow(t.toDouble, alpha)
+          val dt = YearFraction(max(dtMin, min(dtMax, tau)))
+          if t.toDouble <= t2.toDouble then Some((t, t + dt)) else None
+        }
+        .toSet + t1 + t2
     ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted)
