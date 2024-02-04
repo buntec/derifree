@@ -20,11 +20,14 @@ import cats.syntax.all.*
 
 import scala.collection.Searching.Found
 import scala.collection.Searching.InsertionPoint
+import scala.collection.View
 import scala.collection.immutable.ArraySeq
-import scala.math.{min, max, round, pow}
+import scala.math.max
+import scala.math.min
+import scala.math.pow
+import scala.math.round
 
 import TimeGrid.*
-import scala.collection.View
 
 opaque type TimeGrid = IndexedSeq[Tick]
 

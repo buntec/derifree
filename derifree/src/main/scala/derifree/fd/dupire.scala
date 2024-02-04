@@ -1,8 +1,9 @@
 package derifree
 package fd
 
-import scala.math.max
 import derifree.syntax.*
+
+import scala.math.max
 
 object dupire:
 
