@@ -29,21 +29,22 @@ import scala.math.round
 
 import TimeGrid.*
 
-opaque type TimeGrid = IndexedSeq[Tick]
+case class TimeGrid(ticks: IndexedSeq[Tick]):
 
-extension (tg: TimeGrid)
-
-  def apply(i: Int): Tick = tg(i)
+  def apply(i: Int): Tick = ticks(i)
 
   def indexOf(t: YearFraction): Option[Int] =
     val tick = nearestTick(t)
-    tg.search(tick) match
+    ticks.search(tick) match
       case Found(foundIndex) => Some(foundIndex)
       case InsertionPoint(_) => None
 
-  def length: Int = tg.length
+  def slice(t1: YearFraction, t2: YearFraction): Option[TimeGrid] =
+    (indexOf(t1), indexOf(t2)).mapN((i, j) => TimeGrid(ticks.slice(i, j + 1)))
 
-  def yearFractions: IndexedSeq[YearFraction] = tg.map(tickToYearFraction)
+  def length: Int = ticks.length
+
+  def yearFractions: IndexedSeq[YearFraction] = ticks.map(tickToYearFraction)
 
   def deltas: IndexedSeq[YearFraction] =
     (yearFractions zip yearFractions.tail).map((t0, t1) => t1 - t0)
@@ -79,7 +80,7 @@ object TimeGrid:
   def equidistant(n: Int, stop: YearFraction, includes: Set[YearFraction]): TimeGrid =
     val dt = stop / (n - 1)
     val times = List.tabulate(n)(i => dt * i).toSet
-    ArraySeq.unsafeWrapArray(times.union(includes).map(nearestTick).toArray.sorted)
+    TimeGrid(ArraySeq.unsafeWrapArray(times.union(includes).map(nearestTick).toArray.sorted))
 
   def almostEquidistant(dt: YearFraction, includes: Set[YearFraction]): TimeGrid =
     val knots = (includes + YearFraction.zero).toList.sorted
@@ -88,7 +89,7 @@ object TimeGrid:
       val k = round(dt0 / dt).toInt
       val dt1 = dt0 / k
       List.tabulate(k)(i => t1 + dt1 * i).toSet + t2
-    ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted)
+    TimeGrid(ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted))
 
   def powerRule(
       alpha: Double,
@@ -106,4 +107,4 @@ object TimeGrid:
           if t.toDouble <= t2.toDouble then Some((t, t + dt)) else None
         }
         .toSet + t1 + t2
-    ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted)
+    TimeGrid(ArraySeq.unsafeWrapArray(yfs.map(nearestTick).toArray.sorted))
