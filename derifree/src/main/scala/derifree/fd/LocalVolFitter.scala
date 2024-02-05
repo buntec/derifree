@@ -10,7 +10,47 @@ import scala.math.max
 import scala.math.pow
 import scala.math.sqrt
 
-object lvfit:
+import LocalVolFitter.*
+
+trait LocalVolFitter:
+
+  def fitPureObservations(
+      obs: List[PureObservation],
+      settings: Settings
+  ): Either[derifree.Error, Result]
+
+  def pureVolSurface(result: Result): Either[derifree.Error, VolSurface[YearFraction]]
+
+  def volSurface[T: TimeLike](
+      result: Result,
+      forward: Forward[T],
+      refTime: T
+  ): Either[derifree.Error, VolSurface[T]]
+
+object LocalVolFitter:
+
+  def apply = new LocalVolFitter:
+    def fitPureObservations(
+        obs: List[PureObservation],
+        settings: Settings
+    ): Either[Error, Result] =
+      Either
+        .catchNonFatal(pureImpl(obs, settings))
+        .leftMap(t => derifree.Error.Generic(t.getMessage))
+
+    def pureVolSurface(result: Result): Either[Error, VolSurface[YearFraction]] =
+      Either
+        .catchNonFatal(pureVolSurfaceImpl(result))
+        .leftMap(t => derifree.Error.Generic(t.getMessage))
+
+    def volSurface[T: TimeLike](
+        result: Result,
+        forward: Forward[T],
+        refTime: T
+    ): Either[Error, VolSurface[T]] =
+      Either
+        .catchNonFatal(volSurfaceImpl[T](result, forward, refTime))
+        .leftMap(t => derifree.Error.Generic(t.getMessage))
 
   trait VolSurface[T]:
     def apply(expiry: T, strike: Double): Double
@@ -59,13 +99,12 @@ object lvfit:
   ):
     def isFirstExpiry: Boolean = grids.isEmpty
 
-  def volSurface[T: TimeLike](
+  private def volSurfaceImpl[T: TimeLike](
       result: Result,
       forward: Forward[T],
-      discount: YieldCurve[T],
       refTime: T
   ): VolSurface[T] =
-    val pureSurface = pureVolSurface(result)
+    val pureSurface = pureVolSurfaceImpl(result)
     new VolSurface[T]:
       def apply(expiry: T, strike: Double): Double =
         val yf = TimeLike[T].yearFractionBetween(refTime, expiry)
@@ -73,7 +112,7 @@ object lvfit:
           buehler.strikeToPureStrike(strike, forward(expiry), forward.dividendFloor(expiry))
         pureSurface(yf, pureStrike)
 
-  def pureVolSurface(result: Result): VolSurface[YearFraction] =
+  private def pureVolSurfaceImpl(result: Result): VolSurface[YearFraction] =
     val expiries = result.expiries
     val settings = result.settings
     val s0 = 1.0
@@ -190,7 +229,7 @@ object lvfit:
       def apply(expiry: YearFraction, strike: Double): Double =
         interpolatedVol(expiry, strike)
 
-  private[derifree] def pureImpl(
+  private def pureImpl(
       obs: List[PureObservation],
       settings: Settings
   ): Result =
@@ -233,6 +272,10 @@ object lvfit:
 
           val sMax =
             SpatialGrid.lognormalPercentile(refVol, t2.toDouble, 0, 1 - settings.gridQuantile)
+
+          // println(
+          //   s"t1=$t1, t2=$t2, refVol=$refVol, minK=$minStrike, maxK=$maxStrike, sMin=$sMin, sMax=$sMax, lvKnots=$lvKnots"
+          // )
 
           val grid = spatialGridFactory(sMin, sMax)
           val interiorPoints = grid.slice(1, grid.length - 1)

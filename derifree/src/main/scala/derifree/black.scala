@@ -64,6 +64,7 @@ def impliedVol(
     price: Double,
     solver: Solver = Solver.Brent(100, 1e-6, 0.001, 10.0)
 ): Either[Error, Double] =
+  require(price.isFinite, "price must be finite")
   val omega = optionType match
     case OptionType.Call => 1
     case OptionType.Put  => -1

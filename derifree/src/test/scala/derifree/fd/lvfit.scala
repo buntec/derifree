@@ -3,9 +3,13 @@ package fd
 
 import scala.math.sqrt
 
+import derifree.fd.LocalVolFitter.*
+
 class LVFitSuite extends munit.FunSuite:
 
   test("black-scholes with term-structure: fitted local-vol should match forward vol"):
+
+    val fitter = LocalVolFitter.apply
 
     val expiries =
       List(YearFraction.oneYear / 12, YearFraction.oneYear / 4, YearFraction.oneYear)
@@ -24,17 +28,17 @@ class LVFitSuite extends munit.FunSuite:
       .zip(vols)
       .flatMap((t, vol) =>
         List(
-          lvfit.PureObservation(0.90, t, vol, 0.01),
-          lvfit.PureObservation(0.95, t, vol, 0.01),
-          lvfit.PureObservation(0.99, t, vol, 0.01),
-          lvfit.PureObservation(1.00, t, vol, 0.01),
-          lvfit.PureObservation(1.01, t, vol, 0.01),
-          lvfit.PureObservation(1.05, t, vol, 0.01),
-          lvfit.PureObservation(1.10, t, vol, 0.01)
+          PureObservation(0.90, t, vol, 0.01),
+          PureObservation(0.95, t, vol, 0.01),
+          PureObservation(0.99, t, vol, 0.01),
+          PureObservation(1.00, t, vol, 0.01),
+          PureObservation(1.01, t, vol, 0.01),
+          PureObservation(1.05, t, vol, 0.01),
+          PureObservation(1.10, t, vol, 0.01)
         )
       )
-    val settings = lvfit.Settings(3, 0.01, 1.0)
-    val result = lvfit.pureImpl(obs, settings)
+    val settings = Settings(3, 0.01, 1.0)
+    val result = fitter.fitPureObservations(obs, settings).toTry.get
 
     val clue =
       s"grid bounds=${result.gridBounds} expiries=${result.expiries}, knots=${result.lvKnots}, lvs=${result.lvAtKnots}"
@@ -44,7 +48,7 @@ class LVFitSuite extends munit.FunSuite:
       .foreach: (lvs, fwdVol) =>
         lvs.foreach(lv => assertEqualsDouble(lv, fwdVol, 0.0001, clue))
 
-    val surface = lvfit.pureVolSurface(result)
+    val surface = fitter.pureVolSurface(result).toTry.get
 
     obs.foreach: obs =>
       val vol = surface(obs.expiry, obs.strike)
