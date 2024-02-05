@@ -1,9 +1,9 @@
 package derifree
 package fd
 
-import scala.math.sqrt
-
 import derifree.fd.LocalVolFitter.*
+
+import scala.math.sqrt
 
 class LVFitSuite extends munit.FunSuite:
 

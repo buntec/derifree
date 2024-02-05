@@ -5,10 +5,10 @@ import cats.effect.IO
 import cats.syntax.all.*
 import derifree.dtos.etd.options.OptionQuote
 import derifree.dtos.etd.options.Snapshot
+import derifree.fd.LocalVolFitter.PureObservation
 import derifree.testutils.*
 
 import scala.concurrent.duration.*
-import derifree.fd.LocalVolFitter.PureObservation
 
 class LVFitSuite2 extends munit.CatsEffectSuite:
 
