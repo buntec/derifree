@@ -26,12 +26,12 @@ import derifree.testutils.*
 
 import scala.concurrent.duration.*
 
-class EtdsSuite extends munit.CatsEffectSuite:
+class EtdSuite extends munit.CatsEffectSuite:
 
   override def munitIOTimeout: Duration = 5.minutes
 
   test("fit USD discount curve from SPX snapshot"):
-    readJsonResource[IO, Snapshot]("SPX-2024-01-29.json")
+    readJsonResource[IO, Snapshot]("SPX-2024-01-31.json")
       .flatMap: snapshot =>
         val fitter = derifree.etd.options.DiscountFitter[YearFraction](
           derifree.etd.options.DiscountFitter.Settings()
@@ -45,8 +45,8 @@ class EtdsSuite extends munit.CatsEffectSuite:
 
   test("compute implied vols from option market snapshot"):
     (
-      readJsonResource[IO, Snapshot]("SPX-2024-01-29.json"),
-      readJsonResource[IO, Snapshot]("AMZN-2024-01-29.json")
+      readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
+      readJsonResource[IO, Snapshot]("AMZN-2024-01-31.json")
     ).flatMapN: (spx, amzn) =>
       val refTime = YearFraction.zero
       val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
@@ -81,10 +81,10 @@ class EtdsSuite extends munit.CatsEffectSuite:
       // _ <- IO.println(quotes)
       yield ()
 
-  test("fit borrow curve from option market snapshot".only):
+  test("fit borrow curve from option market snapshot"):
     (
-      readJsonResource[IO, Snapshot]("SPX-2024-01-29.json"),
-      readJsonResource[IO, Snapshot]("AMZN-2024-01-29.json")
+      readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
+      readJsonResource[IO, Snapshot]("AMZN-2024-01-31.json")
     ).flatMapN: (spx, amzn) =>
       val refTime = YearFraction.zero
 
