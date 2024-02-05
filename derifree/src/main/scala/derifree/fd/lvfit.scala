@@ -31,7 +31,9 @@ object lvfit:
       alpha: Double = 0.5,
       beta: Double = 0.01,
       dtMin: Double = 1.0 / 365 / 5,
-      dtMax: Double = 10.0 / 365
+      dtMax: Double = 10.0 / 365,
+      nSpatialPoints: Int = 200,
+      spatialGridConcentration: Double = 0.1
   )
 
   case class Result(
@@ -75,7 +77,11 @@ object lvfit:
     val expiries = result.expiries
     val settings = result.settings
     val s0 = 1.0
-    val spatialGridFactory = SpatialGrid.Factory.logSinh(250, 0.1, s0)
+    val spatialGridFactory = SpatialGrid.Factory.logSinh(
+      settings.nSpatialPoints,
+      settings.spatialGridConcentration,
+      s0
+    )
     val timeGridFactory =
       TimeGrid.Factory.powerRule(settings.alpha, settings.beta, settings.dtMin, settings.dtMax)
     val timegrid = timeGridFactory(expiries.toSet)
@@ -88,13 +94,14 @@ object lvfit:
       .foldLeft(State2()):
         case (state, ((((t1, t2), lvKnots), lvAtKnots), (lb, ub))) =>
           val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
+          // println(s"time grid slice=${timeGridSlice}")
           val grid = spatialGridFactory(lb, ub)
 
           val interiorPoints = grid.slice(1, grid.length - 1)
           val nInteriorPoints = interiorPoints.length
 
           val initialInteriorValues =
-            (state.grids.headOption, state.values.headOption.flatMap(_.headOption)).tupled.fold(
+            (state.grids.headOption, state.values.headOption.flatMap(_.lastOption)).tupled.fold(
               interiorPoints.map(s => max(s0 - s, 0.0))
             )((prevGrid, prevVals) =>
               val spline = CubicSpline.natural(prevGrid, prevVals)
@@ -148,26 +155,36 @@ object lvfit:
                 .toIndexedSeq
             )
 
-          State2(grid :: state.grids, values :: state.values)
+          State2(
+            grid :: state.grids,
+            // for all but the first expiry, the initial values are
+            // a duplicate of the final values of the previous expiry
+            // (modulo interpolation onto a new grid)
+            (if state.isFirstExpiry then values else values.tail) :: state.values
+          )
 
     val interpolatedValues = state.grids
       .zip(state.values)
+      .reverse
       .flatMap((grid, vals) => vals.map(CubicSpline.natural(grid, _)))
       .toIndexedSeq
+
+    assert(timegrid.length == interpolatedValues.length)
 
     def interpolatedVol(expiry: YearFraction, strike: Double) =
       val i = timegrid.yearFractions.search(expiry).insertionPoint
       val t = expiry.toDouble
       val t1 = timegrid.yearFractions(i - 1).toDouble
       val t2 = timegrid.yearFractions(i).toDouble
+      assert(t1 <= t && t <= t2)
       val c1 = interpolatedValues(i - 1)(strike)
       val c2 = interpolatedValues(i)(strike)
       val vol1 = black.impliedVol(black.OptionType.Call, strike, t1, 1.0, 1.0, c1).toTry.get
       val vol2 = black.impliedVol(black.OptionType.Call, strike, t2, 1.0, 1.0, c2).toTry.get
-      val var1 = vol1 * vol1 * t1
-      val var2 = vol2 * vol2 * t2
-      val totVar = var1 + (var2 - var1) * (t - t1) / (t2 - t1)
-      sqrt(totVar / t)
+      val tvar1 = vol1 * vol1 * t1
+      val tvar2 = vol2 * vol2 * t2
+      val tvar = tvar1 + (tvar2 - tvar1) * (t - t1) / (t2 - t1)
+      sqrt(tvar / t)
 
     new VolSurface[YearFraction]:
       def apply(expiry: YearFraction, strike: Double): Double =
@@ -183,7 +200,11 @@ object lvfit:
     val expiries = YearFraction.zero :: obsByExpiry.map(_(0))
 
     val s0 = 1.0
-    val spatialGridFactory = SpatialGrid.Factory.logSinh(250, 0.1, s0)
+    val spatialGridFactory = SpatialGrid.Factory.logSinh(
+      settings.nSpatialPoints,
+      settings.spatialGridConcentration,
+      s0
+    )
 
     val timeGridFactory =
       TimeGrid.Factory.powerRule(settings.alpha, settings.beta, settings.dtMin, settings.dtMax)

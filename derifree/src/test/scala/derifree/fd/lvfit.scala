@@ -43,3 +43,10 @@ class LVFitSuite extends munit.FunSuite:
       .zip(forwardVols)
       .foreach: (lvs, fwdVol) =>
         lvs.foreach(lv => assertEqualsDouble(lv, fwdVol, 0.0001, clue))
+
+    val surface = lvfit.pureVolSurface(result)
+
+    obs.foreach: obs =>
+      val vol = surface(obs.expiry, obs.strike)
+      val clue = s"vol=$vol, refVol=${obs.vol}, strike=${obs.strike}, expiry=${obs.expiry}"
+      assertEqualsDouble(vol, obs.vol, 0.0001, clue)
