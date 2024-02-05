@@ -1,8 +1,8 @@
 package derifree.math
 
 import org.apache.commons.math3.analysis._
-import org.apache.commons.math3.linear._
 import org.apache.commons.math3.fitting.leastsquares._
+import org.apache.commons.math3.linear._
 import org.apache.commons.math3.optim._
 import org.apache.commons.math3.util.FastMath._
 

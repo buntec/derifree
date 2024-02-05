@@ -2,11 +2,13 @@ package derifree
 package fd
 
 import cats.syntax.all.*
-import derifree.syntax.given
-import derifree.syntax.*
-import scala.math.{max, pow}
-import derifree.math.LinearInterpolation
 import derifree.math.LevenbergMarquardt
+import derifree.math.LinearInterpolation
+import derifree.syntax.*
+import derifree.syntax.given
+
+import scala.math.max
+import scala.math.pow
 
 object lvfit:
 
