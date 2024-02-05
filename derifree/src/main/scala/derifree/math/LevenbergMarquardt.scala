@@ -6,7 +6,7 @@ import org.apache.commons.math3.linear._
 import org.apache.commons.math3.optim._
 import org.apache.commons.math3.util.FastMath._
 
-object LevenbergMarquardt {
+object LevenbergMarquardt:
 
   private case class BoxConstraints(lowerBound: Double, upperBound: Double, center: Double):
 
@@ -117,5 +117,3 @@ object LevenbergMarquardt {
     )
 
   }
-
-}
