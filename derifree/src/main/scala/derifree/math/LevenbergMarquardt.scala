@@ -48,8 +48,14 @@ object LevenbergMarquardt:
   ): Result = {
 
     require(target.length == outputDim)
-    require(lowerBounds.length == inputDim)
-    require(upperBounds.length == inputDim)
+    require(
+      lowerBounds.length == inputDim,
+      s"lower bounds don't match input dimensions ($inputDim): $lowerBounds"
+    )
+    require(
+      upperBounds.length == inputDim,
+      s"upper bounds don't match input dimensions ($inputDim): $upperBounds"
+    )
     require(guess.length == inputDim)
     require(weights.length == outputDim)
 

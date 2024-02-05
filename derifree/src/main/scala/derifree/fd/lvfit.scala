@@ -4,7 +4,6 @@ package fd
 import cats.syntax.all.*
 import derifree.math.LevenbergMarquardt
 import derifree.math.LinearInterpolation
-import derifree.syntax.*
 import derifree.syntax.given
 
 import scala.math.max
@@ -251,7 +250,7 @@ object lvfit:
                 BoundaryCondition.Linear
               )
 
-            (timeGridSlice zip timeGridSlice.tail).zipWithIndex.scanLeft(initialInteriorValues):
+            (timeGridSlice zip timeGridSlice.tail).zipWithIndex.foldLeft(initialInteriorValues):
               case (v1, ((t1, t2), stepIndex)) =>
                 val dt = (t2 - t1).toDouble
                 if state.isFirstExpiry && stepIndex < settings.nRannacherSteps then
@@ -265,12 +264,12 @@ object lvfit:
             val vog = interiorValuesOnGrid(lvAtKnots)
             val terminalVals = SpatialGrid.addBoundaryValues(
               grid,
-              vog.last,
+              vog,
               BoundaryCondition.Linear,
               BoundaryCondition.Linear
             )
             val spline = CubicSpline.natural(grid, terminalVals)
-            obs
+            val ivols = obs
               .map(obs =>
                 black
                   .impliedVol(
@@ -285,6 +284,7 @@ object lvfit:
                   .get
               )
               .toIndexedSeq
+            ivols
 
           val guess = IndexedSeq.fill(lvKnots.length)(refVol)
 
@@ -293,32 +293,29 @@ object lvfit:
             lvKnots.length,
             obs.length,
             obs.map(_.vol).toIndexedSeq,
-            guess,
-            obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
             IndexedSeq.fill(lvKnots.length)(settings.minLv),
             IndexedSeq.fill(lvKnots.length)(settings.maxLv),
+            guess,
+            obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
             0.001,
             0.0001
           )
 
           val lvAtKnots = optResult.optimum
 
-          val vals = interiorValuesOnGrid(lvKnots)
-            .map(interiorVals =>
-              SpatialGrid
-                .addBoundaryValues(
-                  grid,
-                  interiorVals,
-                  BoundaryCondition.Linear,
-                  BoundaryCondition.Linear
-                )
-                .toIndexedSeq
-            )
-            .toList
+          val vals =
+            SpatialGrid
+              .addBoundaryValues(
+                grid,
+                interiorValuesOnGrid(lvAtKnots),
+                BoundaryCondition.Linear,
+                BoundaryCondition.Linear
+              )
+              .toIndexedSeq
 
           State(
             grid :: state.grids,
-            vals ::: state.values,
+            vals :: state.values,
             lvKnots :: state.lvKnots,
             lvAtKnots :: state.lvAtKnots,
             (sMin, sMax) :: state.gridBounds
@@ -326,8 +323,8 @@ object lvfit:
 
     Result(
       expiries,
-      state.gridBounds,
-      state.lvKnots,
-      state.lvAtKnots,
+      state.gridBounds.reverse,
+      state.lvKnots.reverse,
+      state.lvAtKnots.reverse,
       settings
     )
