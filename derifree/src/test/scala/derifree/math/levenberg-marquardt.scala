@@ -41,18 +41,21 @@ class LevenbergMarquardtSuite extends munit.FunSuite:
         val ys = model(c.xs, c.beta)
 
         val result =
-          LevenbergMarquardt.optimize(
-            f,
-            c.n,
-            c.m,
-            ys,
-            lbs,
-            ubs,
-            guess,
-            weights,
-            0.0001,
-            0.0001
-          )
+          LevenbergMarquardt
+            .optimize(
+              f,
+              c.n,
+              c.m,
+              ys,
+              lbs,
+              ubs,
+              guess,
+              weights,
+              0.0001,
+              0.0001
+            )
+            .toTry
+            .get
 
         val residuals = result.residuals
         val rmse = sqrt(residuals.map(r => r * r).sum / residuals.length)

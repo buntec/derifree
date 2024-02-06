@@ -18,6 +18,8 @@ package derifree
 
 import cats.*
 import cats.derived.*
+import cats.syntax.all.*
+import derifree.Error.BadInputs
 
 case class FairValueResult[T](
     fairValue: PV,
@@ -25,3 +27,6 @@ case class FairValueResult[T](
     putProbabilities: Map[T, Double]
 ) derives Show,
       Eq
+
+def validateInput(isValid: Boolean, message: => String): Either[BadInputs, Unit] =
+  Either.raiseUnless(isValid)(Error.BadInputs(message))

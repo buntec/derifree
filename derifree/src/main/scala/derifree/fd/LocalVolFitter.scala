@@ -377,6 +377,8 @@ object LocalVolFitter:
             val spline = CubicSpline.natural(grid, terminalVals)
             val ivols = obs
               .map(obs =>
+                // Might fail when price is below intrinsic due
+                // to numerical inaccuracy, in which case we return 0.
                 black
                   .impliedVol(
                     black.OptionType.Call,
@@ -386,26 +388,29 @@ object LocalVolFitter:
                     1.0,
                     spline(obs.strike)
                   )
-                  .toTry
-                  .get
+                  .toOption
+                  .getOrElse(0.0)
               )
               .toIndexedSeq
             ivols
 
           val guess = IndexedSeq.fill(lvKnots.length)(refVol)
 
-          val optResult = LevenbergMarquardt.optimize(
-            objectiveFun,
-            lvKnots.length,
-            obs.length,
-            obs.map(_.vol).toIndexedSeq,
-            IndexedSeq.fill(lvKnots.length)(settings.minLv),
-            IndexedSeq.fill(lvKnots.length)(settings.maxLv),
-            guess,
-            obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
-            0.001,
-            0.0001
-          )
+          val optResult = LevenbergMarquardt
+            .optimize(
+              objectiveFun,
+              lvKnots.length,
+              obs.length,
+              obs.map(_.vol).toIndexedSeq,
+              IndexedSeq.fill(lvKnots.length)(settings.minLv),
+              IndexedSeq.fill(lvKnots.length)(settings.maxLv),
+              guess,
+              obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
+              0.001,
+              0.0001
+            )
+            .toTry
+            .get
 
           val lvAtKnots = optResult.optimum
 
