@@ -44,10 +44,12 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
         quotes = stock.quotes
           .map: q =>
             val expiry = q.expiry.atTime(16, 0).atZone(stock.expiryZone).toInstant
+
             val timeToMaturity = TimeLike[java.time.Instant]
               .yearFractionBetween(stock.timestamp.toInstant, expiry)
-            val iv = derifree.etd.options.ImpliedVol.american(
-              q.mid.toDouble,
+
+            val ivBid = derifree.etd.options.ImpliedVol.american(
+              q.bid.toDouble,
               q.strike.toDouble,
               timeToMaturity,
               q.isCall,
@@ -55,9 +57,25 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
               forward,
               discount
             )
-            iv.fold(
+
+            val ivAsk = derifree.etd.options.ImpliedVol.american(
+              q.ask.toDouble,
+              q.strike.toDouble,
+              timeToMaturity,
+              q.isCall,
+              refTime,
+              forward,
+              discount
+            )
+
+            (ivBid, ivAsk).tupled.fold(
               _ => q.copy(impliedVol = None),
-              vol => q.copy(impliedVol = OptionQuote.ImpliedVol().copy(mid = vol.some).some)
+              (bid, ask) =>
+                q.copy(impliedVol =
+                  OptionQuote
+                    .ImpliedVol(bid = bid.some, ask = ask.some, mid = ((bid + ask) / 2).some)
+                    .some
+                )
             )
         snapshot = stock.copy(quotes = quotes)
         lv <- IO.fromEither(

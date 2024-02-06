@@ -17,9 +17,8 @@
 package derifree.black
 
 import cats.syntax.all.*
+import derifree.math.RootFinding
 import derifree.normal
-import org.apache.commons.math3.analysis.UnivariateFunction
-import org.apache.commons.math3.analysis.solvers.BrentSolver
 import org.apache.commons.math3.util.{FastMath => math}
 
 enum OptionType:
@@ -34,6 +33,7 @@ object OptionType:
 enum Error(message: String) extends derifree.Error(message):
   case PriceExceedsUpperBound extends Error("price exceeds upper bound")
   case PriceBelowIntrinsic extends Error("price is below intrinsic value")
+  case PriceNotFinite extends Error("price is infinite or NaN")
   case SolverFailed(info: String) extends Error(s"solver failed: $info")
 
 enum Solver:
@@ -63,29 +63,25 @@ def impliedVol(
     discountFactor: Double,
     price: Double,
     solver: Solver = Solver.Brent(100, 1e-6, 0.001, 10.0)
-): Either[Error, Double] =
-  require(price.isFinite, "price must be finite")
+): Either[derifree.Error, Double] =
   val omega = optionType match
     case OptionType.Call => 1
     case OptionType.Put  => -1
-  if price <= discountFactor * math.max(omega * (forward - strike), 0) then
+  if !price.isFinite then Left(Error.PriceNotFinite)
+  else if price <= discountFactor * math.max(omega * (forward - strike), 0) then
     Left(Error.PriceBelowIntrinsic)
   else if (omega > 0 && price > discountFactor * forward) || (omega < 0 && price > discountFactor * strike)
   then Left(Error.PriceExceedsUpperBound)
   else
     solver match
       case Solver.Brent(maxIters, absAccuracy, minVol, maxVol) =>
-        val brent = new BrentSolver(absAccuracy)
-        val objective = new UnivariateFunction:
-          def value(x: Double): Double =
-            price - derifree.black.price(
-              optionType,
-              strike,
-              timeToExpiry,
-              x,
-              forward,
-              discountFactor
-            )
-        Either
-          .catchNonFatal(brent.solve(maxIters, objective, minVol, maxVol))
-          .leftMap(t => Error.SolverFailed(t.getMessage))
+        def f(x: Double) =
+          price - derifree.black.price(
+            optionType,
+            strike,
+            timeToExpiry,
+            x,
+            forward,
+            discountFactor
+          )
+        RootFinding.brent(f, minVol, maxVol, RootFinding.Settings(maxIters, absAccuracy))
