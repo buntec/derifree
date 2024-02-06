@@ -51,6 +51,6 @@ class LVFitSuite extends munit.FunSuite:
     val surface = fitter.pureVolSurface(result).toTry.get
 
     obs.foreach: obs =>
-      val vol = surface(obs.expiry, obs.strike)
+      val vol = surface(obs.expiry, obs.strike).get
       val clue = s"vol=$vol, refVol=${obs.vol}, strike=${obs.strike}, expiry=${obs.expiry}"
       assertEqualsDouble(vol, obs.vol, 0.0001, clue)

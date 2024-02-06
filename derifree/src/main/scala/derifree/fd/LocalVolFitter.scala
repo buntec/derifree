@@ -86,7 +86,7 @@ object LocalVolFitter:
       )
 
   trait VolSurface[T]:
-    def apply(expiry: T, strike: Double): Double
+    def apply(expiry: T, strike: Double): Option[Double]
 
   case class PureObservation(
       strike: Double, // pure strike
@@ -139,7 +139,7 @@ object LocalVolFitter:
   ): VolSurface[T] =
     val pureSurface = pureVolSurfaceImpl(result)
     new VolSurface[T]:
-      def apply(expiry: T, strike: Double): Double =
+      def apply(expiry: T, strike: Double): Option[Double] =
         val yf = TimeLike[T].yearFractionBetween(refTime, expiry)
         val pureStrike =
           buehler.strikeToPureStrike(strike, forward(expiry), forward.dividendFloor(expiry))
@@ -241,26 +241,35 @@ object LocalVolFitter:
       .flatMap((grid, vals) => vals.map(CubicSpline.natural(grid, _)))
       .toIndexedSeq
 
-    assert(timegrid.length == interpolatedValues.length)
+    // assert(timegrid.length == interpolatedValues.length)
+
+    val yfs = timegrid.yearFractions
+    val maxT = timegrid.yearFractions.last
 
     def interpolatedVol(expiry: YearFraction, strike: Double) =
-      val i = timegrid.yearFractions.search(expiry).insertionPoint
-      val t = expiry.toDouble
-      val t1 = timegrid.yearFractions(i - 1).toDouble
-      val t2 = timegrid.yearFractions(i).toDouble
-      assert(t1 <= t && t <= t2)
-      val c1 = interpolatedValues(i - 1)(strike)
-      val c2 = interpolatedValues(i)(strike)
-      val vol1 = black.impliedVol(black.OptionType.Call, strike, t1, 1.0, 1.0, c1).toTry.get
-      val vol2 = black.impliedVol(black.OptionType.Call, strike, t2, 1.0, 1.0, c2).toTry.get
-      val tvar1 = vol1 * vol1 * t1
-      val tvar2 = vol2 * vol2 * t2
-      val tvar = tvar1 + (tvar2 - tvar1) * (t - t1) / (t2 - t1)
-      sqrt(tvar / t)
+      for
+        _ <- Either.raiseUnless(expiry.toDouble <= maxT.toDouble)(
+          Error.BadInputs(s"cannot extrapolate beyond $maxT")
+        )
+        _ <- Either.raiseUnless(expiry.toDouble > 0.0)(
+          Error.BadInputs(s"expiry must be strictly positive")
+        )
+        i = yfs.search(expiry).insertionPoint
+        t = expiry.toDouble
+        t1 = yfs(i - 1).toDouble
+        t2 = yfs(i).toDouble
+        c1 = interpolatedValues(i - 1)(strike)
+        c2 = interpolatedValues(i)(strike)
+        vol1 <- black.impliedVol(black.OptionType.Call, strike, t1, 1.0, 1.0, c1)
+        vol2 <- black.impliedVol(black.OptionType.Call, strike, t2, 1.0, 1.0, c2)
+        tvar1 = vol1 * vol1 * t1
+        tvar2 = vol2 * vol2 * t2
+        tvar = tvar1 + (tvar2 - tvar1) * (t - t1) / (t2 - t1)
+      yield sqrt(tvar / t)
 
     new VolSurface[YearFraction]:
-      def apply(expiry: YearFraction, strike: Double): Double =
-        interpolatedVol(expiry, strike)
+      def apply(expiry: YearFraction, strike: Double): Option[Double] =
+        interpolatedVol(expiry, strike).toOption
 
   private def pureImpl(
       obs: List[PureObservation],
