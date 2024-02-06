@@ -47,8 +47,12 @@ object nelsonsiegel:
       lambdas: List[Double] = defaultLambdaGrid,
       ridgePenalty: Double = 0
   ): Either[Error, Params] =
-    Either.raiseUnless(lambdas.nonEmpty)(Error.BadInputs("lambdas must not be empty")) *>
-      lambdas
+    for
+      _ <- Either.raiseUnless(spotRates.nonEmpty)(
+        Error.BadInputs("spotRates must not be empty")
+      )
+      _ <- Either.raiseUnless(lambdas.nonEmpty)(Error.BadInputs("lambdas must not be empty"))
+      results <- lambdas
         .traverse: lambda =>
           val ls = math.LeastSquares.apply
           val a = spotRates.map: (t, _) =>
@@ -57,7 +61,7 @@ object nelsonsiegel:
           (if ridgePenalty > 0 then ls.ridge(a, y, ridgePenalty) else ls.ols(a, y)).tupleLeft(
             lambda
           )
-        .map: results =>
-          val (lambda, result) = results.minBy(_(1).normOfResiduals)
-          val coeffs = result.coefficients
-          Params(coeffs(0), coeffs(1), coeffs(2), lambda)
+    yield
+      val (lambda, result) = results.minBy(_(1).normOfResiduals)
+      val coeffs = result.coefficients
+      Params(coeffs(0), coeffs(1), coeffs(2), lambda)

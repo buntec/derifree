@@ -141,7 +141,7 @@ object DiscountFitter:
       def fitParams(
           forwards: Option[Map[java.time.LocalDate, Double]]
       ): Either[derifree.Error, derifree.rates.nelsonsiegel.Params] =
-        val dfsByExpiry = quotesByExpiry.map: (expiry, options) =>
+        val dfsByExpiry = quotesByExpiry.toList.mapFilter: (expiry, options) =>
           // if we don't have a first estimate of the forward yet, we fall back on spot
           val forward = forwards.flatMap(_.get(expiry)).getOrElse(spot.toDouble)
 
@@ -177,10 +177,10 @@ object DiscountFitter:
             .sorted
             .toIndexedSeq
 
-          val df = dfs(dfs.length / 2)
-          expiry -> df
+          val df = if dfs.nonEmpty then Some(dfs(dfs.length / 2)) else None
+          df.tupleLeft(expiry)
 
-        val dfs = dfsByExpiry.toList.sortBy(_(0))
+        val dfs = dfsByExpiry.sortBy(_(0))
         val spotRates = dfs.map: (expiry, df) =>
           val yf = daysBetween(refDate, expiry) / 365.0
           val r = -log(df) / yf
