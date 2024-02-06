@@ -2,8 +2,10 @@ package derifree
 package fd
 
 import cats.syntax.all.*
+import derifree.dtos.etd.options.Snapshot
 import derifree.math.LevenbergMarquardt
 import derifree.math.LinearInterpolation
+import derifree.syntax.*
 import derifree.syntax.given
 
 import scala.math.max
@@ -12,20 +14,30 @@ import scala.math.sqrt
 
 import LocalVolFitter.*
 
-trait LocalVolFitter:
+sealed trait LocalVolFitter:
 
   def fitPureObservations(
       obs: List[PureObservation],
       settings: Settings
-  ): Either[derifree.Error, Result]
+  ): Either[Error, Result]
 
-  def pureVolSurface(result: Result): Either[derifree.Error, VolSurface[YearFraction]]
+  def pureVolSurface(result: Result): Either[Error, VolSurface[YearFraction]]
 
   def volSurface[T: TimeLike](
       result: Result,
       forward: Forward[T],
       refTime: T
-  ): Either[derifree.Error, VolSurface[T]]
+  ): Either[Error, VolSurface[T]]
+
+  def fitSnapshot[T: TimeLike](
+      snapshot: Snapshot,
+      forward: Forward[T],
+      refTime: T,
+      settings: Settings,
+      shortMaturityCutoff: T,
+      deltaCutoffPuts: Double = -0.05,
+      deltaCutoffCalls: Double = 0.05
+  ): Either[Error, Result]
 
 object LocalVolFitter:
 
@@ -36,12 +48,12 @@ object LocalVolFitter:
     ): Either[Error, Result] =
       Either
         .catchNonFatal(pureImpl(obs, settings))
-        .leftMap(t => derifree.Error.Generic(t.getMessage))
+        .leftMap(t => Error.Generic(t.getMessage))
 
     def pureVolSurface(result: Result): Either[Error, VolSurface[YearFraction]] =
       Either
         .catchNonFatal(pureVolSurfaceImpl(result))
-        .leftMap(t => derifree.Error.Generic(t.getMessage))
+        .leftMap(t => Error.Generic(t.getMessage))
 
     def volSurface[T: TimeLike](
         result: Result,
@@ -50,7 +62,28 @@ object LocalVolFitter:
     ): Either[Error, VolSurface[T]] =
       Either
         .catchNonFatal(volSurfaceImpl[T](result, forward, refTime))
-        .leftMap(t => derifree.Error.Generic(t.getMessage))
+        .leftMap(t => Error.Generic(t.getMessage))
+
+    def fitSnapshot[T: TimeLike](
+        snapshot: Snapshot,
+        forward: Forward[T],
+        refTime: T,
+        settings: Settings,
+        shortMaturityCutoff: T,
+        deltaCutoffPuts: Double,
+        deltaCutoffCalls: Double
+    ): Either[Error, Result] =
+      fitPureObservations(
+        snapshotToPureObs(
+          snapshot,
+          forward,
+          refTime,
+          shortMaturityCutoff,
+          deltaCutoffPuts,
+          deltaCutoffCalls
+        ),
+        settings
+      )
 
   trait VolSurface[T]:
     def apply(expiry: T, strike: Double): Double
@@ -392,3 +425,52 @@ object LocalVolFitter:
       state.lvAtKnots.reverse,
       settings
     )
+
+  private def snapshotToPureObs[T: TimeLike](
+      snapshot: Snapshot,
+      forward: Forward[T],
+      refTime: T,
+      shortMaturityCutoff: T,
+      deltaCutoffPuts: Double = -0.05,
+      deltaCutoffCalls: Double = 0.05
+  ): List[PureObservation] =
+    snapshot.quotes
+      .groupBy(_.expiry)
+      .map: (expiryDate, quotes) =>
+        // TODO: use exact expiry times by date/exchange
+        val expiry = expiryDate.atTime(16, 0).atZone(snapshot.expiryZone).toInstant
+        val timeToMaturity = TimeLike[java.time.Instant]
+          .yearFractionBetween(snapshot.timestamp.toInstant, expiry)
+        val t = refTime.plusYearFraction(timeToMaturity)
+        val f = forward(t)
+        val filteredQuotes = quotes.filter: quote =>
+          val otm =
+            (quote.isPut && quote.strike < f) || (quote.isCall && quote.strike > f)
+          val delta = (quote.isPut && quote.delta.exists(
+            _ < deltaCutoffPuts
+          )) || (quote.isCall && quote.delta.exists(_ > deltaCutoffCalls))
+          otm && delta
+
+        t -> filteredQuotes
+      .filter((t, _) => t > shortMaturityCutoff)
+      .toList
+      .flatMap: (t, quotes) =>
+        quotes
+          .map: quote =>
+            val pureStrike = buehler.strikeToPureStrike(
+              quote.strike.toDouble,
+              forward(t),
+              forward.dividendFloor(t)
+            )
+            for
+              iv <- quote.impliedVol
+              bid <- iv.bid
+              mid <- iv.mid
+              ask <- iv.ask
+            yield PureObservation(
+              pureStrike,
+              refTime.yearFractionTo(t),
+              mid,
+              max(ask - bid, 0.0)
+            )
+          .flatten
