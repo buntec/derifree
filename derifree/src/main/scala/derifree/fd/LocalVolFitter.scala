@@ -1,3 +1,19 @@
+/*
+ * Copyright 2023 buntec
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package derifree
 package fd
 
@@ -9,10 +25,13 @@ import derifree.syntax.*
 import derifree.syntax.given
 
 import scala.math.max
+import scala.math.min
 import scala.math.pow
 import scala.math.sqrt
 
 import LocalVolFitter.*
+import scala.collection.Searching.Found
+import scala.collection.Searching.InsertionPoint
 
 sealed trait LocalVolFitter:
 
@@ -22,6 +41,15 @@ sealed trait LocalVolFitter:
   ): Either[Error, Result]
 
   def pureVolSurface(result: Result): Either[Error, VolSurface[YearFraction]]
+
+  def pureLocalVolSurface(result: Result): LocalVolSurface[YearFraction]
+
+  /** Unlike in Buehler's paper, the surface is right-continuous in time. */
+  def localVolSurface[T: TimeLike](
+      result: Result,
+      forward: Forward[T],
+      refTime: T
+  ): LocalVolSurface[T]
 
   def volSurface[T: TimeLike](
       result: Result,
@@ -42,6 +70,7 @@ sealed trait LocalVolFitter:
 object LocalVolFitter:
 
   def apply = new LocalVolFitter:
+
     def fitPureObservations(
         obs: List[PureObservation],
         settings: Settings
@@ -85,8 +114,41 @@ object LocalVolFitter:
         settings
       )
 
+    def pureLocalVolSurface(result: Result): LocalVolSurface[YearFraction] =
+      val slices = result.lvKnots
+        .zip(result.lvAtKnots)
+        .map:
+          case (lvKnots, lvAtKnots) =>
+            LinearInterpolation.withFlatExtrapolation(lvKnots, lvAtKnots)
+        .toIndexedSeq
+      val n = result.expiries.length
+      new LocalVolSurface[YearFraction]:
+        def apply(time: YearFraction, spot: Double): Double =
+          // make it right-continuous in t
+          val i = result.expiries.tail.search(time) match
+            case Found(foundIndex)              => min(foundIndex + 1, n - 1)
+            case InsertionPoint(insertionPoint) => min(insertionPoint, n - 1)
+          slices(i)(spot)
+
+    def localVolSurface[T: TimeLike](
+        result: Result,
+        forward: Forward[T],
+        refTime: T
+    ): LocalVolSurface[T] =
+      val pureLv = pureLocalVolSurface(result)
+      new LocalVolSurface[T]:
+        def apply(time: T, spot: Double): Double =
+          val t = refTime.yearFractionTo(time)
+          val f = forward(time)
+          val d = forward.dividendFloor(time)
+          val x = (spot - d) / (f - d)
+          if spot > d then (spot - d) / spot * pureLv(t, x) else 0.0
+
   trait VolSurface[T]:
     def apply(expiry: T, strike: Double): Option[Double]
+
+  trait LocalVolSurface[T]:
+    def apply(time: T, spot: Double): Double
 
   case class PureObservation(
       strike: Double, // pure strike
@@ -109,6 +171,7 @@ object LocalVolFitter:
       spatialGridConcentration: Double = 0.1
   )
 
+  /** The first element of `expiries` is always 0 by convention. */
   case class Result(
       expiries: List[YearFraction],
       gridBounds: List[(Double, Double)],
