@@ -115,34 +115,73 @@ object BorrowFitter:
               require(o.expiry == expiry) // invariant
               val f = forward.withBorrow(borrow)
               if settings.midVolFromMidPrice then
-                derifree.etd.options.ImpliedVol.american(
-                  o.mid.toDouble,
-                  o.strike.toDouble,
-                  expiryT,
-                  o.isCall,
-                  refTime,
-                  f,
-                  discount
-                )
+                snapshot.exerciseStyle match
+                  case ExerciseStyle.American =>
+                    derifree.etd.options.ImpliedVol.american(
+                      o.mid.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
+                  case ExerciseStyle.European =>
+                    derifree.etd.options.ImpliedVol.european(
+                      o.mid.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
               else
-                val bidVol = derifree.etd.options.ImpliedVol.american(
-                  o.bid.toDouble,
-                  o.strike.toDouble,
-                  expiryT,
-                  o.isCall,
-                  refTime,
-                  f,
-                  discount
-                )
-                val askVol = derifree.etd.options.ImpliedVol.american(
-                  o.ask.toDouble,
-                  o.strike.toDouble,
-                  expiryT,
-                  o.isCall,
-                  refTime,
-                  f,
-                  discount
-                )
+                val bidVol = snapshot.exerciseStyle match
+                  case ExerciseStyle.American =>
+                    derifree.etd.options.ImpliedVol.american(
+                      o.bid.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
+                  case ExerciseStyle.European =>
+                    derifree.etd.options.ImpliedVol.european(
+                      o.bid.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
+                val askVol = snapshot.exerciseStyle match
+                  case ExerciseStyle.American =>
+                    derifree.etd.options.ImpliedVol.american(
+                      o.ask.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
+                  case ExerciseStyle.European =>
+                    derifree.etd.options.ImpliedVol.european(
+                      o.ask.toDouble,
+                      o.strike.toDouble,
+                      expiryT,
+                      expiryT,
+                      o.isCall,
+                      refTime,
+                      f,
+                      discount
+                    )
                 (bidVol, askVol).mapN((bid, ask) => (bid + ask) / 2)
 
             // At this point for every given strike there should be exactly one

@@ -24,14 +24,14 @@ import derifree.math.LinearInterpolation
 import derifree.syntax.*
 import derifree.syntax.given
 
+import scala.collection.Searching.Found
+import scala.collection.Searching.InsertionPoint
 import scala.math.max
 import scala.math.min
 import scala.math.pow
 import scala.math.sqrt
 
 import LocalVolFitter.*
-import scala.collection.Searching.Found
-import scala.collection.Searching.InsertionPoint
 
 sealed trait LocalVolFitter:
 
