@@ -30,8 +30,11 @@ import scala.math.max
 import scala.math.min
 import scala.math.pow
 import scala.math.sqrt
+import scala.math.log
+import scala.math.exp
 
 import LocalVolFitter.*
+import scala.annotation.tailrec
 
 sealed trait LocalVolFitter:
 
@@ -339,7 +342,12 @@ object LocalVolFitter:
       settings: Settings
   ): Result =
     val obsByExpiry =
-      obs.groupBy(_.expiry).toList.sortBy(_(0)).filter((t, _) => t.toDouble > 0.0)
+      obs
+        .groupBy(_.expiry)
+        .toList
+        .sortBy(_(0))
+        .filter((t, _) => t.toDouble > 0.0)
+        .map((t, obs) => t -> obs.toIndexedSeq)
 
     val expiries = YearFraction.zero :: obsByExpiry.map(_(0))
 
@@ -359,8 +367,6 @@ object LocalVolFitter:
       .zip(obsByExpiry)
       .foldLeft(State()):
         case (state, (t1, (t2, obs))) =>
-          val refVol = obs.map(_.vol).sum / obs.length
-
           val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
 
           val minStrike = obs.map(_.strike).min
@@ -372,128 +378,192 @@ object LocalVolFitter:
             )
             .toIndexedSeq
 
+          // Our first (very crude) estimate of the grid bounds
+          // assumes a log-normal distribution with vol equal
+          // to the median implied vol across target strikes.
+          // These bounds will be refined iteratively below.
+          val medianVol = obs.map(_.vol)(obs.length / 2)
           val sMin =
-            SpatialGrid.lognormalPercentile(refVol, t2.toDouble, 0, settings.gridQuantile)
+            val p =
+              SpatialGrid.lognormalPercentile(medianVol, t2.toDouble, 0, settings.gridQuantile)
+            state.grids.headOption.fold(p)(grid => min(grid(0), p))
 
           val sMax =
-            SpatialGrid.lognormalPercentile(refVol, t2.toDouble, 0, 1 - settings.gridQuantile)
+            val p =
+              SpatialGrid.lognormalPercentile(
+                medianVol,
+                t2.toDouble,
+                0,
+                1 - settings.gridQuantile
+              )
+            state.grids.headOption.fold(p)(grid => max(grid(grid.length - 1), p))
 
-          // println(
-          //   s"t1=$t1, t2=$t2, refVol=$refVol, minK=$minStrike, maxK=$maxStrike, sMin=$sMin, sMax=$sMax, lvKnots=$lvKnots"
-          // )
+          // Recursive b/c once we have computed the call price
+          // values based on the given estimate of the grid bounds,
+          // we use the implied distribution to infer whether
+          // the grid needs to be widened to accomodate the
+          // target quantile, in which case we recurse.
+          @tailrec
+          def go(sMin: Double, sMax: Double, iter: Int): State = {
 
-          val grid = spatialGridFactory(sMin, sMax)
-          val interiorPoints = grid.slice(1, grid.length - 1)
-          val nInteriorPoints = interiorPoints.length
-
-          val initialInteriorValues =
-            (state.grids.headOption, state.values.headOption).tupled.fold(
-              interiorPoints.map(s => max(s0 - s, 0.0))
-            )((prevGrid, prevVals) =>
-              val spline = CubicSpline.natural(prevGrid, prevVals)
-              interiorPoints.map(spline(_))
-            )
-
-          def interiorValuesOnGrid(lvAtKnots: IndexedSeq[Double]) =
-            val lvSlice = LinearInterpolation.withFlatExtrapolation(lvKnots, lvAtKnots)
-
-            val reaction = Array.ofDim[Double](nInteriorPoints)
-            val convection = Array.ofDim[Double](nInteriorPoints)
-            val diffusion = Array.ofDim[Double](nInteriorPoints)
-
-            var k = 0
-            while (k < nInteriorPoints) {
-              val s = interiorPoints(k)
-              val lv = lvSlice(s)
-              diffusion(k) = 0.5 * s * s * lv * lv
-              k += 1
+            if (iter > 25) {
+              throw new Error.BadNumerics("max grid bound estimation iters exceeded")
             }
 
-            val op =
-              Operator(
+            val grid = spatialGridFactory(sMin, sMax)
+            val interiorPoints = grid.slice(1, grid.length - 1)
+            val nInteriorPoints = interiorPoints.length
+
+            val initialInteriorValues =
+              (state.grids.headOption, state.values.headOption).tupled.fold(
+                interiorPoints.map(s => max(s0 - s, 0.0))
+              )((prevGrid, prevVals) =>
+                val spline = CubicSpline.natural(prevGrid, prevVals)
+                interiorPoints.map(spline(_))
+              )
+
+            def interiorValuesOnGrid(lvAtKnots: IndexedSeq[Double]) =
+              val lvSlice = LinearInterpolation.withFlatExtrapolation(lvKnots, lvAtKnots)
+
+              val reaction = Array.ofDim[Double](nInteriorPoints)
+              val convection = Array.ofDim[Double](nInteriorPoints)
+              val diffusion = Array.ofDim[Double](nInteriorPoints)
+
+              var k = 0
+              while (k < nInteriorPoints) {
+                val s = interiorPoints(k)
+                val lv = lvSlice(s)
+                diffusion(k) = 0.5 * s * s * lv * lv
+                k += 1
+              }
+
+              val op =
+                Operator(
+                  grid,
+                  IArray.unsafeFromArray(convection),
+                  IArray.unsafeFromArray(diffusion),
+                  IArray.unsafeFromArray(reaction),
+                  BoundaryCondition.Linear,
+                  BoundaryCondition.Linear
+                )
+
+              (timeGridSlice zip timeGridSlice.tail).zipWithIndex
+                .foldLeft(initialInteriorValues):
+                  case (v1, ((t1, t2), stepIndex)) =>
+                    val dt = (t2 - t1).toDouble
+                    if state.isFirstExpiry && stepIndex < settings.nRannacherSteps then
+                      // Rannacher smoothing
+                      op.implicitStep(op.implicitStep(v1, 0.5 * dt), 0.5 * dt)
+                    else
+                      // Crank-Nicolson
+                      op.thetaStep(v1, dt, 0.5)
+
+            def objectiveFun(lvAtKnots: IndexedSeq[Double]) =
+              val vog = interiorValuesOnGrid(lvAtKnots)
+              val terminalVals = SpatialGrid.addBoundaryValues(
                 grid,
-                IArray.unsafeFromArray(convection),
-                IArray.unsafeFromArray(diffusion),
-                IArray.unsafeFromArray(reaction),
+                vog,
                 BoundaryCondition.Linear,
                 BoundaryCondition.Linear
               )
+              val spline = CubicSpline.natural(grid, terminalVals)
+              val ivols = obs
+                .map(obs =>
+                  // Might fail when price is below intrinsic due
+                  // to numerical inaccuracy, in which case we return 0.
+                  black
+                    .impliedVol(
+                      black.OptionType.Call,
+                      obs.strike,
+                      t2.toDouble,
+                      1.0,
+                      1.0,
+                      spline(obs.strike)
+                    )
+                    .toOption
+                    .getOrElse(0.0)
+                )
+                .toIndexedSeq
+              ivols
 
-            (timeGridSlice zip timeGridSlice.tail).zipWithIndex.foldLeft(initialInteriorValues):
-              case (v1, ((t1, t2), stepIndex)) =>
-                val dt = (t2 - t1).toDouble
-                if state.isFirstExpiry && stepIndex < settings.nRannacherSteps then
-                  // Rannacher smoothing
-                  op.implicitStep(op.implicitStep(v1, 0.5 * dt), 0.5 * dt)
-                else
-                  // Crank-Nicolson
-                  op.thetaStep(v1, dt, 0.5)
+            val guess = IndexedSeq.fill(lvKnots.length)(medianVol)
 
-          def objectiveFun(lvAtKnots: IndexedSeq[Double]) =
-            val vog = interiorValuesOnGrid(lvAtKnots)
-            val terminalVals = SpatialGrid.addBoundaryValues(
-              grid,
-              vog,
-              BoundaryCondition.Linear,
-              BoundaryCondition.Linear
-            )
-            val spline = CubicSpline.natural(grid, terminalVals)
-            val ivols = obs
-              .map(obs =>
-                // Might fail when price is below intrinsic due
-                // to numerical inaccuracy, in which case we return 0.
-                black
-                  .impliedVol(
-                    black.OptionType.Call,
-                    obs.strike,
-                    t2.toDouble,
-                    1.0,
-                    1.0,
-                    spline(obs.strike)
-                  )
-                  .toOption
-                  .getOrElse(0.0)
+            val optResult = LevenbergMarquardt
+              .optimize(
+                objectiveFun,
+                lvKnots.length,
+                obs.length,
+                obs.map(_.vol).toIndexedSeq,
+                IndexedSeq.fill(lvKnots.length)(settings.minLv),
+                IndexedSeq.fill(lvKnots.length)(settings.maxLv),
+                guess,
+                obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
+                0.001,
+                0.0001
               )
-              .toIndexedSeq
-            ivols
+              .toTry
+              .get
 
-          val guess = IndexedSeq.fill(lvKnots.length)(refVol)
+            val lvAtKnots = optResult.optimum
 
-          val optResult = LevenbergMarquardt
-            .optimize(
-              objectiveFun,
-              lvKnots.length,
-              obs.length,
-              obs.map(_.vol).toIndexedSeq,
-              IndexedSeq.fill(lvKnots.length)(settings.minLv),
-              IndexedSeq.fill(lvKnots.length)(settings.maxLv),
-              guess,
-              obs.map(m => 1.0 / (m.spread * m.spread)).toIndexedSeq,
-              0.001,
-              0.0001
-            )
-            .toTry
-            .get
+            val vals =
+              SpatialGrid
+                .addBoundaryValues(
+                  grid,
+                  interiorValuesOnGrid(lvAtKnots),
+                  BoundaryCondition.Linear,
+                  BoundaryCondition.Linear
+                )
+                .toIndexedSeq
 
-          val lvAtKnots = optResult.optimum
+            // Check that the grid bounds are wide enough to accomodate the
+            // desired grid quantile. If not then expand bounds and try again.
+            val (newLbMaybe, newUbMaybe) =
+              val alpha = 0.2
+              val beta = 0.025
 
-          val vals =
-            SpatialGrid
-              .addBoundaryValues(
-                grid,
-                interiorValuesOnGrid(lvAtKnots),
-                BoundaryCondition.Linear,
-                BoundaryCondition.Linear
-              )
-              .toIndexedSeq
+              // A cubic spline fitted to the call values at time t2,
+              // the first derivative of which essentially gives us the CDF
+              // of the implied distribution.
+              val spline = CubicSpline.natural(grid, vals)
+              val n = grid.length
+              val k = max(1, (beta * n).toInt)
 
-          State(
-            grid :: state.grids,
-            vals :: state.values,
-            lvKnots :: state.lvKnots,
-            lvAtKnots :: state.lvAtKnots,
-            (sMin, sMax) :: state.gridBounds
-          )
+              // lower grid tail
+              val lgt = grid.take(k)
+
+              // upper grid tail
+              val ugt = grid.takeRight(k)
+
+              // estimate of lower tail quantile
+              val lowerQ =
+                exp(lgt.map(x => log(1.0 + spline.fstDerivative(x))).sum / lgt.length)
+
+              // estimate of upper tail quantile
+              val upperQ = exp(ugt.map(x => log(-spline.fstDerivative(x))).sum / ugt.length)
+
+              (lowerQ > settings.gridQuantile).guard[Option].as(sMin * (1 - alpha)) ->
+                (upperQ > settings.gridQuantile).guard[Option].as(sMax * (1 + alpha))
+
+            // println(s"iter=$iter, lb: $sMin, newLb: $newLbMaybe, ub: $sMax, newUb: $newUbMaybe")
+
+            (newLbMaybe, newUbMaybe) match {
+              case (Some(lb), Some(ub)) => go(lb, ub, iter + 1)
+              case (Some(lb), None)     => go(lb, sMax, iter + 1)
+              case (None, Some(ub))     => go(sMin, ub, iter + 1)
+              case (None, None) =>
+                State(
+                  grid :: state.grids,
+                  vals :: state.values,
+                  lvKnots :: state.lvKnots,
+                  lvAtKnots :: state.lvAtKnots,
+                  (sMin, sMax) :: state.gridBounds
+                )
+            }
+
+          }
+
+          go(sMin, sMax, 0)
 
     Result(
       expiries,
