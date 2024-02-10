@@ -258,7 +258,6 @@ object LocalVolFitter:
       .foldLeft(State2()):
         case (state, ((((t1, t2), lvKnots), lvAtKnots), (lb, ub))) =>
           val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
-          // println(s"time grid slice=${timeGridSlice}")
           val grid = spatialGridFactory(lb, ub)
 
           val interiorPoints = grid.slice(1, grid.length - 1)
@@ -418,7 +417,9 @@ object LocalVolFitter:
                 0,
                 settings.spatialGrid.quantile
               )
-            state.grids.headOption.fold(p)(grid => min(grid(0), p))
+            state.grids.headOption.fold(p) { grid =>
+              min(grid(0), p)
+            }
 
           val sMax =
             val p =
@@ -428,7 +429,9 @@ object LocalVolFitter:
                 0,
                 1 - settings.spatialGrid.quantile
               )
-            state.grids.headOption.fold(p)(grid => max(grid(grid.length - 1), p))
+            state.grids.headOption.fold(p) { grid =>
+              max(grid(grid.length - 1), p)
+            }
 
           // Recursive b/c once we have computed the call prices
           // based on the given estimate of the grid bounds,

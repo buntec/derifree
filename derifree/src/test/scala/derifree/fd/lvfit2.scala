@@ -30,72 +30,86 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
   override def munitIOTimeout: Duration = 5.minutes
 
   test("fit local vol from option market snapshot"):
-    (
-      readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
-      readJsonResource[IO, Snapshot]("AMZN-2024-01-31.json")
-    ).flatMapN: (spx, stock) =>
-      val refTime = YearFraction.zero
+    List(
+      "AMZN-2024-01-31.json",
+      "META-2024-01-31.json",
+      "TSLA-2024-01-31.json",
+      "AMZN-2024-01-31.json",
+      "GOOG-2024-02-07.json"
+    ).traverse(fileName =>
+      (
+        readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
+        readJsonResource[IO, Snapshot](fileName)
+      ).flatMapN: (spx, stock) =>
+        val refTime = YearFraction.zero
 
-      val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
-        derifree.etd.options.DiscountFitter.Settings()
-      )
-
-      val borrowFitter = derifree.etd.options.BorrowFitter[YearFraction](
-        derifree.etd.options.BorrowFitter.Settings()
-      )
-
-      val lvFitter = LocalVolFitter.apply
-      val lvSettings = LocalVolFitter.Settings(5, 0.01, 3.0)
-
-      val initialBorrow = YieldCurve.zero[YearFraction]
-      val divs = Nil
-
-      for
-        spot <- IO.fromOption(
-          (stock.underlying.bid, stock.underlying.ask).mapN((bid, ask) => (bid + ask) / 2)
-        )(Exception("missing spot"))
-        discount <- IO.fromEither(discountFitter.fromSnapshot(spx, refTime))
-        forward = Forward[YearFraction](spot.toDouble, divs, discount, initialBorrow)
-        borrow <- IO.fromEither(borrowFitter.fromSnapshot(stock, forward, discount, refTime))
-        quotes = stock.quotes
-          .map: q =>
-            val expiry = q.expiry.atTime(16, 0).atZone(stock.expiryZone).toInstant
-
-            val timeToMaturity = TimeLike[java.time.Instant]
-              .yearFractionBetween(stock.timestamp.toInstant, expiry)
-
-            val ivBid = derifree.etd.options.ImpliedVol.american(
-              q.bid.toDouble,
-              q.strike.toDouble,
-              timeToMaturity,
-              q.isCall,
-              refTime,
-              forward,
-              discount
-            )
-
-            val ivAsk = derifree.etd.options.ImpliedVol.american(
-              q.ask.toDouble,
-              q.strike.toDouble,
-              timeToMaturity,
-              q.isCall,
-              refTime,
-              forward,
-              discount
-            )
-
-            (ivBid, ivAsk).tupled.fold(
-              _ => q.copy(impliedVol = None),
-              (bid, ask) =>
-                q.copy(impliedVol =
-                  OptionQuote
-                    .ImpliedVol(bid = bid.some, ask = ask.some, mid = ((bid + ask) / 2).some)
-                    .some
-                )
-            )
-        snapshot = stock.copy(quotes = quotes)
-        lv <- IO.fromEither(
-          lvFitter.fitSnapshot(snapshot, forward, refTime, lvSettings, YearFraction.oneDay * 7)
+        val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
+          derifree.etd.options.DiscountFitter.Settings()
         )
-        _ <- IO.println(lv)
-      yield ()
+
+        val borrowFitter = derifree.etd.options.BorrowFitter[YearFraction](
+          derifree.etd.options.BorrowFitter.Settings()
+        )
+
+        val lvFitter = LocalVolFitter.apply
+        val lvSettings = LocalVolFitter.Settings(5, 0.01, 3.0)
+
+        val initialBorrow = YieldCurve.zero[YearFraction]
+        val divs = Nil
+
+        for
+          spot <- IO.fromOption(
+            (stock.underlying.bid, stock.underlying.ask).mapN((bid, ask) => (bid + ask) / 2)
+          )(Exception("missing spot"))
+          discount <- IO.fromEither(discountFitter.fromSnapshot(spx, refTime))
+          forward = Forward[YearFraction](spot.toDouble, divs, discount, initialBorrow)
+          borrow <- IO.fromEither(borrowFitter.fromSnapshot(stock, forward, discount, refTime))
+          quotes = stock.quotes
+            .map: q =>
+              val expiry = q.expiry.atTime(16, 0).atZone(stock.expiryZone).toInstant
+
+              val timeToMaturity = TimeLike[java.time.Instant]
+                .yearFractionBetween(stock.timestamp.toInstant, expiry)
+
+              val ivBid = derifree.etd.options.ImpliedVol.american(
+                q.bid.toDouble,
+                q.strike.toDouble,
+                timeToMaturity,
+                q.isCall,
+                refTime,
+                forward,
+                discount
+              )
+
+              val ivAsk = derifree.etd.options.ImpliedVol.american(
+                q.ask.toDouble,
+                q.strike.toDouble,
+                timeToMaturity,
+                q.isCall,
+                refTime,
+                forward,
+                discount
+              )
+
+              (ivBid, ivAsk).tupled.fold(
+                _ => q.copy(impliedVol = None),
+                (bid, ask) =>
+                  q.copy(impliedVol =
+                    OptionQuote
+                      .ImpliedVol(bid = bid.some, ask = ask.some, mid = ((bid + ask) / 2).some)
+                      .some
+                  )
+              )
+          snapshot = stock.copy(quotes = quotes)
+          lv <- IO.fromEither(
+            lvFitter.fitSnapshot(
+              snapshot,
+              forward,
+              refTime,
+              lvSettings,
+              YearFraction.oneDay * 7
+            )
+          )
+          _ <- IO.println(lv)
+        yield ()
+    )

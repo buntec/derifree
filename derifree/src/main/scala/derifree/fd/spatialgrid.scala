@@ -17,6 +17,7 @@
 package derifree
 package fd
 
+import derifree.math.RootFinding
 import org.apache.commons.math3.util.{FastMath => math}
 
 object SpatialGrid:
@@ -31,7 +32,7 @@ object SpatialGrid:
     def logSinh(n: Int, concentration: Double, x0: Double): Factory = new Factory:
       def apply(min: Double, max: Double): IArray[Double] =
         if min < x0 && x0 < max then
-          fitAntipoint(x0, self.logSinh(min, max, n, concentration, x0))
+          fitAntipointKeepEndpoints(x0, self.logSinh(min, max, n, concentration, x0)).toTry.get
         else self.log(min, max, n)
 
   enum SpatialDimension:
@@ -72,7 +73,10 @@ object SpatialGrid:
       concentration: Double,
       x0: Double
   ): IArray[Double] =
-    require(max > x0 && x0 > min && min > 0.0, "must have min < x0 < max")
+    require(
+      max > x0 && x0 > min && min > 0.0,
+      s"must have 0 < min < x0 < max but was min=$min, x0=$x0, max=$max"
+    )
     val a = math.log(max / min)
     IArray.unsafeFromArray(
       Array
@@ -96,17 +100,38 @@ object SpatialGrid:
 
   def fitAntipoint(antipoint: Double, grid: IArray[Double]): IArray[Double] =
     require(
-      antipoint >= grid.min && antipoint <= grid.max,
-      "antipoint outside end points"
+      antipoint > grid.min && antipoint < grid.max,
+      s"antipoint outside end points: antipoint=${antipoint}, gridMin=${grid.min}, gridMax=${grid.max}"
     )
-    val i = {
-      val j = grid.search(antipoint).insertionPoint
-      if (j >= 0) j else -(j + 1)
-    }
+    val i = grid.search(antipoint).insertionPoint
     val x1 = grid(i - 1)
     val x2 = grid(i)
     val alpha = antipoint - (x1 + x2) / 2.0
     grid.map(_ + alpha)
+
+  def fitAntipointKeepEndpoints(
+      antipoint: Double,
+      grid: IArray[Double]
+  ): Either[Error, IArray[Double]] =
+    validateInput(
+      antipoint > grid.min && antipoint < grid.max,
+      s"antipoint outside end points: antipoint=${antipoint}, gridMin=${grid.min}, gridMax=${grid.max}"
+    ).flatMap: _ =>
+      val i = grid.search(antipoint).insertionPoint
+      val x1 = grid(i - 1)
+      val x2 = grid(i)
+      val x0 = grid(0)
+      val xn = grid(grid.length - 1)
+      def f(alpha: Double)(x: Double) = x0 + math.pow((x - x0) / (xn - x0), alpha) * (xn - x0)
+      val result = RootFinding.brent(
+        (alpha: Double) => 0.5 * (f(alpha)(x1) + f(alpha)(x2)) - antipoint,
+        0.5,
+        2.0,
+        RootFinding.Settings(30, 1e-8)
+      )
+      result.map: alphaStar =>
+        val h = f(alphaStar)
+        grid.map(h)
 
   def addBoundaryValues(
       grid: IArray[Double],
