@@ -24,17 +24,17 @@ import derifree.math.LinearInterpolation
 import derifree.syntax.*
 import derifree.syntax.given
 
+import scala.annotation.tailrec
 import scala.collection.Searching.Found
 import scala.collection.Searching.InsertionPoint
+import scala.math.exp
+import scala.math.log
 import scala.math.max
 import scala.math.min
 import scala.math.pow
 import scala.math.sqrt
-import scala.math.log
-import scala.math.exp
 
 import LocalVolFitter.*
-import scala.annotation.tailrec
 
 sealed trait LocalVolFitter:
 
@@ -71,6 +71,67 @@ sealed trait LocalVolFitter:
   ): Either[Error, Result]
 
 object LocalVolFitter:
+
+  case class Settings(
+      nKnots: Int,
+      minLv: Double,
+      maxLv: Double,
+      spatialGrid: Settings.SpatialGrid = Settings.SpatialGrid(),
+      timeGrid: Settings.TimeGrid = Settings.TimeGrid(),
+      nRannacherSteps: Int = 2
+  )
+
+  object Settings:
+
+    /** The step size at time t is min(dtMax, max(dtMin, beta * t^alpha)) */
+    case class TimeGrid(
+        alpha: Double = 0.5,
+        beta: Double = 0.01,
+        dtMin: Double = 1.0 / 365 / 5,
+        dtMax: Double = 10.0 / 365
+    )
+
+    case class SpatialGrid(
+        nPoints: Int = 200,
+        quantile: Double = 1e-5,
+        /** Lower values mean higher concentration of grid points around ATM. */
+        sinhConcentration: Double = 0.1,
+        expansionFactor: Double = 0.2,
+        tailFraction: Double = 0.025,
+        expansionMaxIters: Int = 10
+    )
+
+  case class Result(
+      /** The fitted expiries in year fraction terms. By convenction the first element is always
+        * zero.
+        */
+      expiries: List[YearFraction],
+
+      /** The spatial grid bounds `(lb, ub)` applicable between two expiries . */
+      gridBounds: List[(Double, Double)],
+
+      /** The local vol knots in pure spot terms */
+      lvKnots: List[IndexedSeq[Double]] = Nil,
+
+      /** The fitted local vol values at the knots. */
+      lvAtKnots: List[IndexedSeq[Double]] = Nil,
+
+      /** The settings used for this fit. */
+      settings: Settings
+  )
+
+  case class PureObservation(
+      strike: Double, // pure strike
+      expiry: YearFraction,
+      vol: Double, // pure vol
+      spread: Double
+  )
+
+  trait VolSurface[T]:
+    def apply(expiry: T, strike: Double): Option[Double]
+
+  trait LocalVolSurface[T]:
+    def apply(time: T, spot: Double): Double
 
   def apply = new LocalVolFitter:
 
@@ -147,42 +208,6 @@ object LocalVolFitter:
           val x = (spot - d) / (f - d)
           if spot > d then (spot - d) / spot * pureLv(t, x) else 0.0
 
-  trait VolSurface[T]:
-    def apply(expiry: T, strike: Double): Option[Double]
-
-  trait LocalVolSurface[T]:
-    def apply(time: T, spot: Double): Double
-
-  case class PureObservation(
-      strike: Double, // pure strike
-      expiry: YearFraction,
-      vol: Double, // pure vol
-      spread: Double
-  )
-
-  case class Settings(
-      nKnots: Int,
-      minLv: Double,
-      maxLv: Double,
-      gridQuantile: Double = 1e-5,
-      nRannacherSteps: Int = 2,
-      alpha: Double = 0.5,
-      beta: Double = 0.01,
-      dtMin: Double = 1.0 / 365 / 5,
-      dtMax: Double = 10.0 / 365,
-      nSpatialPoints: Int = 200,
-      spatialGridConcentration: Double = 0.1
-  )
-
-  /** The first element of `expiries` is always 0 by convention. */
-  case class Result(
-      expiries: List[YearFraction],
-      gridBounds: List[(Double, Double)],
-      lvKnots: List[IndexedSeq[Double]] = Nil,
-      lvAtKnots: List[IndexedSeq[Double]] = Nil,
-      settings: Settings
-  )
-
   private case class State(
       grids: List[IndexedSeq[Double]] = Nil,
       values: List[IndexedSeq[Double]] = Nil,
@@ -216,12 +241,13 @@ object LocalVolFitter:
     val settings = result.settings
     val s0 = 1.0
     val spatialGridFactory = SpatialGrid.Factory.logSinh(
-      settings.nSpatialPoints,
-      settings.spatialGridConcentration,
+      settings.spatialGrid.nPoints,
+      settings.spatialGrid.sinhConcentration,
       s0
     )
     val timeGridFactory =
-      TimeGrid.Factory.powerRule(settings.alpha, settings.beta, settings.dtMin, settings.dtMax)
+      val s = settings.timeGrid
+      TimeGrid.Factory.powerRule(s.alpha, s.beta, s.dtMin, s.dtMax)
     val timegrid = timeGridFactory(expiries.toSet)
 
     val state = expiries
@@ -353,13 +379,14 @@ object LocalVolFitter:
 
     val s0 = 1.0
     val spatialGridFactory = SpatialGrid.Factory.logSinh(
-      settings.nSpatialPoints,
-      settings.spatialGridConcentration,
+      settings.spatialGrid.nPoints,
+      settings.spatialGrid.sinhConcentration,
       s0
     )
 
     val timeGridFactory =
-      TimeGrid.Factory.powerRule(settings.alpha, settings.beta, settings.dtMin, settings.dtMax)
+      val s = settings.timeGrid
+      TimeGrid.Factory.powerRule(s.alpha, s.beta, s.dtMin, s.dtMax)
 
     val timegrid = timeGridFactory(expiries.toSet)
 
@@ -382,10 +409,15 @@ object LocalVolFitter:
           // assumes a log-normal distribution with vol equal
           // to the median implied vol across target strikes.
           // These bounds will be refined iteratively below.
-          val medianVol = obs.map(_.vol)(obs.length / 2)
+          val medianVol = obs.map(_.vol).sorted.apply(obs.length / 2)
           val sMin =
             val p =
-              SpatialGrid.lognormalPercentile(medianVol, t2.toDouble, 0, settings.gridQuantile)
+              SpatialGrid.lognormalPercentile(
+                medianVol,
+                t2.toDouble,
+                0,
+                settings.spatialGrid.quantile
+              )
             state.grids.headOption.fold(p)(grid => min(grid(0), p))
 
           val sMax =
@@ -394,20 +426,22 @@ object LocalVolFitter:
                 medianVol,
                 t2.toDouble,
                 0,
-                1 - settings.gridQuantile
+                1 - settings.spatialGrid.quantile
               )
             state.grids.headOption.fold(p)(grid => max(grid(grid.length - 1), p))
 
-          // Recursive b/c once we have computed the call price
-          // values based on the given estimate of the grid bounds,
+          // Recursive b/c once we have computed the call prices
+          // based on the given estimate of the grid bounds,
           // we use the implied distribution to infer whether
           // the grid needs to be widened to accomodate the
           // target quantile, in which case we recurse.
           @tailrec
           def go(sMin: Double, sMax: Double, iter: Int): State = {
 
-            if (iter > 25) {
-              throw new Error.BadNumerics("max grid bound estimation iters exceeded")
+            if (iter > settings.spatialGrid.expansionMaxIters) {
+              throw new Error.BadNumerics(
+                s"max grid bound expansion iters (${settings.spatialGrid.expansionMaxIters}) exceeded"
+              )
             }
 
             val grid = spatialGridFactory(sMin, sMax)
@@ -519,15 +553,12 @@ object LocalVolFitter:
             // Check that the grid bounds are wide enough to accomodate the
             // desired grid quantile. If not then expand bounds and try again.
             val (newLbMaybe, newUbMaybe) =
-              val alpha = 0.2
-              val beta = 0.025
-
               // A cubic spline fitted to the call values at time t2,
               // the first derivative of which essentially gives us the CDF
               // of the implied distribution.
               val spline = CubicSpline.natural(grid, vals)
               val n = grid.length
-              val k = max(1, (beta * n).toInt)
+              val k = max(1, (settings.spatialGrid.tailFraction * n).toInt)
 
               // lower grid tail
               val lgt = grid.take(k)
@@ -542,10 +573,9 @@ object LocalVolFitter:
               // estimate of upper tail quantile
               val upperQ = exp(ugt.map(x => log(-spline.fstDerivative(x))).sum / ugt.length)
 
-              (lowerQ > settings.gridQuantile).guard[Option].as(sMin * (1 - alpha)) ->
-                (upperQ > settings.gridQuantile).guard[Option].as(sMax * (1 + alpha))
-
-            // println(s"iter=$iter, lb: $sMin, newLb: $newLbMaybe, ub: $sMax, newUb: $newUbMaybe")
+              val alpha = settings.spatialGrid.expansionFactor
+              (lowerQ > settings.spatialGrid.quantile).guard[Option].as(sMin * (1 - alpha)) ->
+                (upperQ > settings.spatialGrid.quantile).guard[Option].as(sMax * (1 + alpha))
 
             (newLbMaybe, newUbMaybe) match {
               case (Some(lb), Some(ub)) => go(lb, ub, iter + 1)
