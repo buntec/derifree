@@ -171,12 +171,14 @@ object feynmankac:
             val convection = Array.ofDim[Double](n)
             val diffusion = Array.ofDim[Double](n)
 
+            val d = forward.dividendFloor(t2)
+
             var k = 0
             while (k < n) {
               val s = interiorPoints(k)
               // since no dividend is payed between t1 and t2,
               // we can use either t1 or t2 to compute the floor
-              val v = max(0, vol * (s - forward.dividendFloor(t2)))
+              val v = max(0, vol * (s - d))
               reaction(k) = r
               convection(k) = s * mu
               diffusion(k) = 0.5 * v * v

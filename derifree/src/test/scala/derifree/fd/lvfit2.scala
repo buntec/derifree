@@ -31,14 +31,13 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
 
   test("fit local vol from option market snapshot"):
     List(
-      "AMZN-2024-01-31.json",
-      "META-2024-01-31.json",
-      "TSLA-2024-01-31.json",
-      "AMZN-2024-01-31.json",
+      "AMZN-2024-02-07.json",
+      "META-2024-02-07.json",
+      "TSLA-2024-02-07.json",
       "GOOG-2024-02-07.json"
     ).traverse(fileName =>
       (
-        readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
+        readJsonResource[IO, Snapshot]("SPX-2024-02-07.json"),
         readJsonResource[IO, Snapshot](fileName)
       ).flatMapN: (spx, stock) =>
         val refTime = YearFraction.zero
