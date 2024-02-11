@@ -81,7 +81,7 @@ class EtdSuite extends munit.CatsEffectSuite:
       // _ <- IO.println(quotes)
       yield ()
 
-  test("fit borrow curve from option market snapshot".only):
+  test("fit borrow curve from option market snapshot"):
 
     List(
       "AMZN-2024-02-07.json",
