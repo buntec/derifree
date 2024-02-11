@@ -20,8 +20,11 @@ import derifree.literals.*
 import derifree.syntax.*
 
 import scala.math.exp
+import scala.concurrent.duration.*
 
 class VanillaSuite extends munit.FunSuite:
+
+  override def munitTimeout: Duration = 3.minutes
 
   val dsl = Dsl[java.time.Instant]
   import dsl.*

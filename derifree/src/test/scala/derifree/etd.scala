@@ -31,7 +31,7 @@ class EtdSuite extends munit.CatsEffectSuite:
   override def munitIOTimeout: Duration = 5.minutes
 
   test("fit USD discount curve from SPX snapshot"):
-    readJsonResource[IO, Snapshot]("SPX-2024-01-31.json")
+    readJsonResource[IO, Snapshot]("SPX-2024-02-07.json")
       .flatMap: snapshot =>
         val fitter = derifree.etd.options.DiscountFitter[YearFraction](
           derifree.etd.options.DiscountFitter.Settings()
@@ -45,8 +45,8 @@ class EtdSuite extends munit.CatsEffectSuite:
 
   test("compute implied vols from option market snapshot"):
     (
-      readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
-      readJsonResource[IO, Snapshot]("AMZN-2024-01-31.json")
+      readJsonResource[IO, Snapshot]("SPX-2024-02-07.json"),
+      readJsonResource[IO, Snapshot]("AMZN-2024-02-07.json")
     ).flatMapN: (spx, amzn) =>
       val refTime = YearFraction.zero
       val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
@@ -82,33 +82,55 @@ class EtdSuite extends munit.CatsEffectSuite:
       yield ()
 
   test("fit borrow curve from option market snapshot"):
-    (
-      readJsonResource[IO, Snapshot]("SPX-2024-01-31.json"),
-      readJsonResource[IO, Snapshot]("AMZN-2024-01-31.json")
-    ).flatMapN: (spx, amzn) =>
-      val refTime = YearFraction.zero
 
-      val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
-        derifree.etd.options.DiscountFitter.Settings()
-      )
+    List(
+      "AMZN-2024-02-07.json",
+      "META-2024-02-07.json",
+      "TSLA-2024-02-07.json",
+      "GOOG-2024-02-07.json"
+    ).traverse(fileName =>
+      (
+        readJsonResource[IO, Snapshot]("SPX-2024-02-07.json"),
+        readJsonResource[IO, Snapshot](fileName)
+      ).flatMapN: (spx, stock) =>
+        val refTime = YearFraction.zero
 
-      val borrowFitter = derifree.etd.options.BorrowFitter[YearFraction](
-        derifree.etd.options.BorrowFitter.Settings()
-      )
-
-      val initialBorrow = YieldCurve.zero[YearFraction]
-
-      val divs = Nil
-
-      for
-        spot <- IO.fromOption(
-          (amzn.underlying.bid, amzn.underlying.ask).mapN((bid, ask) => (bid + ask) / 2)
-        )(Exception("missing spot"))
-        discount <- IO.fromEither(discountFitter.fromSnapshot(spx, refTime))
-        forward = Forward[YearFraction](spot.toDouble, divs, discount, initialBorrow)
-        borrow <- IO.fromEither(borrowFitter.fromSnapshot(amzn, forward, discount, refTime))
-        _ <- List(1, 7, 30, 90, 180, 365, 2 * 365, 3 * 365).traverse_(d =>
-          val r = borrow.spotRate(refTime.plusDays(d))
-          IO.println(s"d=$d, r=$r")
+        val discountFitter = derifree.etd.options.DiscountFitter[YearFraction](
+          derifree.etd.options.DiscountFitter.Settings()
         )
-      yield ()
+
+        val borrowFitter = derifree.etd.options.BorrowFitter[YearFraction](
+          derifree.etd.options.BorrowFitter.Settings()
+        )
+
+        val initialBorrow = YieldCurve.zero[YearFraction]
+
+        val divs = Nil
+
+        for
+          spot <- IO.fromOption(
+            (stock.underlying.bid, stock.underlying.ask).mapN((bid, ask) => (bid + ask) / 2)
+          )(Exception("missing spot"))
+          discount <- IO.fromEither(discountFitter.fromSnapshot(spx, refTime))
+          forward = Forward[YearFraction](spot.toDouble, divs, discount, initialBorrow)
+          borrow <- IO.fromEither(borrowFitter.fromSnapshot(stock, forward, discount, refTime))
+          _ <- List(1, 7, 30, 90, 180, 365, 2 * 365, 3 * 365).traverse_(d =>
+            val r = borrow.spotRate(refTime.plusDays(d))
+            IO.println(s"d=$d, r=$r")
+          )
+          spotAndBorrow <- IO.fromEither(
+            borrowFitter.fromSnapshotCorrectSpot(
+              stock,
+              forward,
+              discount,
+              refTime
+            )
+          )
+          (spot, borrow) = spotAndBorrow
+          _ <- IO.println(s"spot=${forward.spot}, corrected spot=${spot}")
+          _ <- List(1, 7, 30, 90, 180, 365, 2 * 365, 3 * 365).traverse_(d =>
+            val r = borrow.spotRate(refTime.plusDays(d))
+            IO.println(s"d=$d, r=$r")
+          )
+        yield ()
+    )

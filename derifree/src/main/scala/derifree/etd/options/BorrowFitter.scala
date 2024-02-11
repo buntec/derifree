@@ -20,13 +20,15 @@ package options
 
 import cats.syntax.all.*
 import derifree.dtos.etd.options.*
+import derifree.math.UnivariateMinimizing
 import derifree.syntax.*
 
+import scala.annotation.tailrec
 import scala.math.abs
 import scala.math.exp
 
 /** Fits borrow curves based on put-call parity of option implied vols. */
-trait BorrowFitter[T]:
+sealed trait BorrowFitter[T]:
 
   def fromSnapshot(
       snapshot: Snapshot,
@@ -34,6 +36,17 @@ trait BorrowFitter[T]:
       discount: YieldCurve[T],
       refTime: T
   ): Either[Error, YieldCurve[T]]
+
+  /** Simultaneously calibrates spot (mid) price and borrow curve. Can be used when there is
+    * uncertainty about the underlying spot price corresponding to the given option price
+    * snapshot. This method is ad-hoc and doesn't work with cash dividends so use judiciously!
+    */
+  def fromSnapshotCorrectSpot(
+      snapshot: Snapshot,
+      forward: Forward[T],
+      discount: YieldCurve[T],
+      refTime: T
+  ): Either[Error, (Double, YieldCurve[T])]
 
 object BorrowFitter:
 
@@ -58,6 +71,47 @@ object BorrowFitter:
 
   def apply[T: TimeLike](settings: Settings): BorrowFitter[T] = new BorrowFitter[T]:
 
+    def fromSnapshotCorrectSpot(
+        snapshot: Snapshot,
+        forward: Forward[T],
+        discount: YieldCurve[T],
+        refTime: T
+    ): Either[Error, (Double, YieldCurve[T])] =
+
+      require(
+        forward.dividends.forall(_.cash == 0.0),
+        "this method doesn't support cash dividends"
+      )
+
+      /* If the initial spot is incorrect, say S_e = S * exp(alpha), then we iterate S_{n + 1}
+       * \= S_n * exp(-t1 * (r1 - r_avg)) where r_1 is the estimated borrow spot rate at the
+       * first expiry t1 and r_avg = (1/n)\sum_i r_i. Since
+       * ```
+       * r1 = alpha/t1 + r1*,
+       * ```
+       * where r1* is the true borrow rate (for the true spot level) and
+       * ```
+       * r_avg = alpha * (1/n)\sum_i (1/t_i) + (1/n)\sum_i r_i*
+       * ```
+       * it can be shown that
+       * ```
+       * alpha_{n+1} = alpha_n * (1/n)(1 + t1/t2 + t1/t3 + ... + t1/tn) < alpha_n
+       * ```
+       */
+      @tailrec
+      def go(spot: Double): (Double, YieldCurve[T]) = {
+        val result =
+          fromSnapshotImpl(snapshot, forward.withSpot(spot), discount, refTime).toTry.get
+        val (_, tShort, rShort) = result.head
+        val rBar = result.map(_(2)).sum / result.length
+        val nextSpot = spot * exp(-tShort.toDouble * (rShort - rBar))
+        if abs(nextSpot / spot - 1.0) > 0.0001 then go(nextSpot)
+        else
+          val dfs = result.map((t, yf, r) => t -> exp(-yf.toDouble * r))
+          spot -> YieldCurve.linearRTFromDiscountFactors(dfs, refTime)
+      }
+      Either.catchOnly[derifree.Error](go(forward.spot))
+
     private def daysBetween(d1: java.time.LocalDate, d2: java.time.LocalDate): Long =
       java.time.temporal.ChronoUnit.DAYS.between(d1, d2)
 
@@ -67,6 +121,17 @@ object BorrowFitter:
         discount: YieldCurve[T],
         refTime: T
     ): Either[Error, YieldCurve[T]] =
+      fromSnapshotImpl(snapshot, forward, discount, refTime).map: l =>
+        val dfs = l.map((t, yf, r) => t -> exp(-yf.toDouble * r))
+        YieldCurve.linearRTFromDiscountFactors(dfs, refTime)
+
+    // returns triples (expiry, year-fraction-to-expiry, spot-rate)
+    private def fromSnapshotImpl(
+        snapshot: Snapshot,
+        forward: Forward[T],
+        discount: YieldCurve[T],
+        refTime: T
+    ): Either[Error, List[(T, YearFraction, Double)]] =
       val t0 = snapshot.timestamp.toInstant
 
       // Group option quotes by expiry and
@@ -80,10 +145,10 @@ object BorrowFitter:
           ) > settings.minDaysToExpiry
         )
 
-      // Bootstrap discount factors of the borrow curve starting from the first expiry.
-      val fittedDiscountsE = quotesByExpiry.toList
+      // Bootstrap borrow curve starting from the first expiry.
+      quotesByExpiry.toList
         .sortBy(_(0)) // sort by expiry
-        .foldLeftM(List.empty[(T, Double)]):
+        .foldLeftM(List.empty[(T, YearFraction, Double)]):
           case (acc, (expiry, quotes)) =>
             // compute year fraction to expiry
             // TODO: we imprecisely assume expiry at 4pm in the exchange's time zone
@@ -105,8 +170,9 @@ object BorrowFitter:
             // this discount factor onto the end. Otherwise we use a flat curve.
             def borrow(r: Double) =
               if settings.useTermStructure then
+                val dfs = acc.map((t, yf, r) => t -> exp(-yf.toDouble * r))
                 YieldCurve.linearRTFromDiscountFactors[T](
-                  acc :+ (expiryT -> exp(-yf.toDouble * r)),
+                  dfs :+ (expiryT -> exp(-yf.toDouble * r)),
                   refTime
                 )
               else YieldCurve.fromContinuouslyCompoundedRate[T](r.rate, refTime)
@@ -209,7 +275,4 @@ object BorrowFitter:
                 1e-4,
                 1e-4
               )
-              .map(result => acc :+ (expiryT -> exp(-yf.toDouble * result.point)))
-
-      fittedDiscountsE.map: dfs =>
-        YieldCurve.linearRTFromDiscountFactors(dfs, refTime)
+              .map(result => acc :+ (expiryT, yf, result.point))
