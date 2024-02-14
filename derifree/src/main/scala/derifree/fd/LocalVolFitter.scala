@@ -48,14 +48,14 @@ sealed trait LocalVolFitter:
   def pureLocalVolSurface(result: Result): LocalVolSurface[YearFraction]
 
   /** Marginal density of the "pure" process X_t. */
-  def pureDensity(result: Result): Density[YearFraction]
+  def pureDensity(result: Result): Either[Error, Density[YearFraction]]
 
   /** Marginal density of the "real" spot price process S_t. */
   def density[T: TimeLike](
       result: Result,
       forward: Forward[T],
       refTime: T
-  ): Density[T]
+  ): Either[Error, Density[T]]
 
   /** Unlike in Buehler's paper, the surface is right-continuous in time. */
   def localVolSurface[T: TimeLike](
@@ -148,17 +148,27 @@ object LocalVolFitter:
 
   def apply = new LocalVolFitter:
 
-    def density[T: TimeLike](result: Result, forward: Forward[T], refTime: T): Density[T] =
-      val pureD = pureDensity(result)
-      new Density[T]:
-        def apply(time: T, spot: Double): Double =
-          val t = refTime.yearFractionTo(time)
-          val f = forward(time)
-          val d = forward.dividendFloor(time)
-          val x = (spot - d) / (f - d)
-          if spot > d then pureD(t, x) / (f - d) else 0.0
+    def density[T: TimeLike](
+        result: Result,
+        forward: Forward[T],
+        refTime: T
+    ): Either[Error, Density[T]] =
+      pureDensity(result).map(pureD =>
+        new Density[T]:
+          def apply(time: T, spot: Double): Double =
+            val t = refTime.yearFractionTo(time)
+            val f = forward(time)
+            val d = forward.dividendFloor(time)
+            val x = (spot - d) / (f - d)
+            if spot > d then pureD(t, x) / (f - d) else 0.0
+      )
 
-    def pureDensity(result: Result): Density[YearFraction] = pureDensityImpl(result)
+    def pureDensity(result: Result): Either[Error, Density[YearFraction]] =
+      Either
+        .catchNonFatal(
+          pureDensityImpl(result)
+        )
+        .leftMap(t => Error.Generic(t.getMessage))
 
     def fitPureObservations(
         obs: List[PureObservation],
