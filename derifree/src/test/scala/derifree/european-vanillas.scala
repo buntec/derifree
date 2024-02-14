@@ -19,8 +19,8 @@ package derifree
 import derifree.literals.*
 import derifree.syntax.*
 
-import scala.math.exp
 import scala.concurrent.duration.*
+import scala.math.exp
 
 class VanillaSuite extends munit.FunSuite:
 

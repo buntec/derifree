@@ -47,6 +47,16 @@ sealed trait LocalVolFitter:
 
   def pureLocalVolSurface(result: Result): LocalVolSurface[YearFraction]
 
+  /** Marginal density of the "pure" process X_t. */
+  def pureDensity(result: Result): Density[YearFraction]
+
+  /** Marginal density of the "real" spot price process S_t. */
+  def density[T: TimeLike](
+      result: Result,
+      forward: Forward[T],
+      refTime: T
+  ): Density[T]
+
   /** Unlike in Buehler's paper, the surface is right-continuous in time. */
   def localVolSurface[T: TimeLike](
       result: Result,
@@ -102,7 +112,7 @@ object LocalVolFitter:
     )
 
   case class Result(
-      /** The fitted expiries in year fraction terms. By convenction the first element is always
+      /** The fitted expiries in year fraction terms. By convention the first element is always
         * zero.
         */
       expiries: List[YearFraction],
@@ -133,7 +143,22 @@ object LocalVolFitter:
   trait LocalVolSurface[T]:
     def apply(time: T, spot: Double): Double
 
+  trait Density[T]:
+    def apply(time: T, spot: Double): Double
+
   def apply = new LocalVolFitter:
+
+    def density[T: TimeLike](result: Result, forward: Forward[T], refTime: T): Density[T] =
+      val pureD = pureDensity(result)
+      new Density[T]:
+        def apply(time: T, spot: Double): Double =
+          val t = refTime.yearFractionTo(time)
+          val f = forward(time)
+          val d = forward.dividendFloor(time)
+          val x = (spot - d) / (f - d)
+          if spot > d then pureD(t, x) / (f - d) else 0.0
+
+    def pureDensity(result: Result): Density[YearFraction] = pureDensityImpl(result)
 
     def fitPureObservations(
         obs: List[PureObservation],
@@ -237,106 +262,8 @@ object LocalVolFitter:
         pureSurface(yf, pureStrike)
 
   private def pureVolSurfaceImpl(result: Result): VolSurface[YearFraction] =
-    val expiries = result.expiries
-    val settings = result.settings
-    val s0 = 1.0
-    val spatialGridFactory = SpatialGrid.Factory.logSinh(
-      settings.spatialGrid.nPoints,
-      settings.spatialGrid.sinhConcentration,
-      s0
-    )
-    val timeGridFactory =
-      val s = settings.timeGrid
-      TimeGrid.Factory.powerRule(s.alpha, s.beta, s.dtMin, s.dtMax)
-    val timegrid = timeGridFactory(expiries.toSet)
-
-    val state = expiries
-      .zip(expiries.tail)
-      .zip(result.lvKnots)
-      .zip(result.lvAtKnots)
-      .zip(result.gridBounds)
-      .foldLeft(State2()):
-        case (state, ((((t1, t2), lvKnots), lvAtKnots), (lb, ub))) =>
-          val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
-          val grid = spatialGridFactory(lb, ub)
-
-          val interiorPoints = grid.slice(1, grid.length - 1)
-          val nInteriorPoints = interiorPoints.length
-
-          val initialInteriorValues =
-            (state.grids.headOption, state.values.headOption.flatMap(_.lastOption)).tupled.fold(
-              interiorPoints.map(s => max(s0 - s, 0.0))
-            )((prevGrid, prevVals) =>
-              val spline = CubicSpline.natural(prevGrid, prevVals)
-              interiorPoints.map(spline(_))
-            )
-
-          val interiorValuesOnGrid =
-            val lvSlice = LinearInterpolation.withFlatExtrapolation(lvKnots, lvAtKnots)
-
-            val reaction = Array.ofDim[Double](nInteriorPoints)
-            val convection = Array.ofDim[Double](nInteriorPoints)
-            val diffusion = Array.ofDim[Double](nInteriorPoints)
-
-            var k = 0
-            while (k < nInteriorPoints) {
-              val s = interiorPoints(k)
-              val lv = lvSlice(s)
-              diffusion(k) = 0.5 * s * s * lv * lv
-              k += 1
-            }
-
-            val op =
-              Operator(
-                grid,
-                IArray.unsafeFromArray(convection),
-                IArray.unsafeFromArray(diffusion),
-                IArray.unsafeFromArray(reaction),
-                BoundaryCondition.Linear,
-                BoundaryCondition.Linear
-              )
-
-            (timeGridSlice zip timeGridSlice.tail).zipWithIndex.scanLeft(initialInteriorValues):
-              case (v1, ((t1, t2), stepIndex)) =>
-                val dt = (t2 - t1).toDouble
-                if state.isFirstExpiry && stepIndex < settings.nRannacherSteps then
-                  // Rannacher smoothing
-                  op.implicitStep(op.implicitStep(v1, 0.5 * dt), 0.5 * dt)
-                else
-                  // Crank-Nicolson
-                  op.thetaStep(v1, dt, 0.5)
-
-          val values = interiorValuesOnGrid
-            .map(ivals =>
-              SpatialGrid
-                .addBoundaryValues(
-                  grid,
-                  ivals,
-                  BoundaryCondition.Linear,
-                  BoundaryCondition.Linear
-                )
-                .toIndexedSeq
-            )
-
-          State2(
-            grid :: state.grids,
-            // for all but the first expiry, the initial values are
-            // a duplicate of the final values of the previous expiry
-            // (modulo interpolation onto a new grid)
-            (if state.isFirstExpiry then values else values.tail) :: state.values
-          )
-
-    val interpolatedValues = state.grids
-      .zip(state.values)
-      .reverse
-      .flatMap((grid, vals) => vals.map(CubicSpline.natural(grid, _)))
-      .toIndexedSeq
-
-    // assert(timegrid.length == interpolatedValues.length)
-
-    val yfs = timegrid.yearFractions
-    val maxT = timegrid.yearFractions.last
-
+    val (yfs, interpolatedValues) = pureCallPriceSlices(result)
+    val maxT = yfs.last
     def interpolatedVol(expiry: YearFraction, strike: Double) =
       for
         _ <- Either.raiseUnless(expiry.toDouble <= maxT.toDouble)(
@@ -654,3 +581,129 @@ object LocalVolFitter:
               max(ask - bid, 0.0)
             )
           .flatten
+
+  private def pureDensityImpl(result: Result): Density[YearFraction] =
+    val (times, prices) = pureCallPriceSlices(result)
+    val maxT = times.last
+    def interpolatedDensity(time: YearFraction, spot: Double) =
+      for
+        _ <- Either.raiseUnless(time.toDouble <= maxT.toDouble)(
+          Error.BadInputs(s"cannot extrapolate beyond $maxT")
+        )
+        _ <- Either.raiseUnless(time.toDouble > 0.0)(
+          Error.BadInputs(s"time must be strictly positive")
+        )
+        i = times.search(time).insertionPoint
+        t = time.toDouble
+        t1 = times(i - 1).toDouble
+        t2 = times(i).toDouble
+        c1 = prices(i - 1).sndDerivative(spot)
+        c2 = prices(i).sndDerivative(spot)
+      yield c1 + (t - t1) * (c2 - c1) / (t2 - t1)
+
+    new Density[YearFraction]:
+      def apply(time: YearFraction, spot: Double): Double =
+        interpolatedDensity(time, spot).toOption.getOrElse(0.0)
+
+  private def pureCallPriceSlices(
+      result: Result
+  ): (IndexedSeq[YearFraction], IndexedSeq[CubicSpline]) =
+    val expiries = result.expiries
+    val settings = result.settings
+    val s0 = 1.0
+    val spatialGridFactory = SpatialGrid.Factory.logSinh(
+      settings.spatialGrid.nPoints,
+      settings.spatialGrid.sinhConcentration,
+      s0
+    )
+    val timeGridFactory =
+      val s = settings.timeGrid
+      TimeGrid.Factory.powerRule(s.alpha, s.beta, s.dtMin, s.dtMax)
+    val timegrid = timeGridFactory(expiries.toSet)
+
+    val state = expiries
+      .zip(expiries.tail)
+      .zip(result.lvKnots)
+      .zip(result.lvAtKnots)
+      .zip(result.gridBounds)
+      .foldLeft(State2()):
+        case (state, ((((t1, t2), lvKnots), lvAtKnots), (lb, ub))) =>
+          val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
+          val grid = spatialGridFactory(lb, ub)
+
+          val interiorPoints = grid.slice(1, grid.length - 1)
+          val nInteriorPoints = interiorPoints.length
+
+          val initialInteriorValues =
+            (state.grids.headOption, state.values.headOption.flatMap(_.lastOption)).tupled.fold(
+              interiorPoints.map(s => max(s0 - s, 0.0))
+            )((prevGrid, prevVals) =>
+              val spline = CubicSpline.natural(prevGrid, prevVals)
+              interiorPoints.map(spline(_))
+            )
+
+          val interiorValuesOnGrid =
+            val lvSlice = LinearInterpolation.withFlatExtrapolation(lvKnots, lvAtKnots)
+
+            val reaction = Array.ofDim[Double](nInteriorPoints)
+            val convection = Array.ofDim[Double](nInteriorPoints)
+            val diffusion = Array.ofDim[Double](nInteriorPoints)
+
+            var k = 0
+            while (k < nInteriorPoints) {
+              val s = interiorPoints(k)
+              val lv = lvSlice(s)
+              diffusion(k) = 0.5 * s * s * lv * lv
+              k += 1
+            }
+
+            val op =
+              Operator(
+                grid,
+                IArray.unsafeFromArray(convection),
+                IArray.unsafeFromArray(diffusion),
+                IArray.unsafeFromArray(reaction),
+                BoundaryCondition.Linear,
+                BoundaryCondition.Linear
+              )
+
+            (timeGridSlice zip timeGridSlice.tail).zipWithIndex.scanLeft(initialInteriorValues):
+              case (v1, ((t1, t2), stepIndex)) =>
+                val dt = (t2 - t1).toDouble
+                if state.isFirstExpiry && stepIndex < settings.nRannacherSteps then
+                  // Rannacher smoothing
+                  op.implicitStep(op.implicitStep(v1, 0.5 * dt), 0.5 * dt)
+                else
+                  // Crank-Nicolson
+                  op.thetaStep(v1, dt, 0.5)
+
+          val values = interiorValuesOnGrid
+            .map(ivals =>
+              SpatialGrid
+                .addBoundaryValues(
+                  grid,
+                  ivals,
+                  BoundaryCondition.Linear,
+                  BoundaryCondition.Linear
+                )
+                .toIndexedSeq
+            )
+
+          State2(
+            grid :: state.grids,
+            // for all but the first expiry, the initial values are
+            // a duplicate of the final values of the previous expiry
+            // (modulo interpolation onto a new grid)
+            (if state.isFirstExpiry then values else values.tail) :: state.values
+          )
+
+    val interpolatedValues = state.grids
+      .zip(state.values)
+      .reverse
+      .flatMap((grid, vals) => vals.map(CubicSpline.natural(grid, _)))
+      .toIndexedSeq
+
+    // assert(timegrid.length == interpolatedValues.length)
+
+    val yfs = timegrid.yearFractions
+    yfs -> interpolatedValues
