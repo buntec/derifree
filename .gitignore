@@ -4,3 +4,5 @@
 .bloop/
 target/
 metals.sbt
+.devenv
+.direnv
