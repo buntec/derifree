@@ -17,8 +17,11 @@
 package derifree
 package fd
 
+import cats.syntax.all.*
 import derifree.fd.LocalVolFitter.*
+import derifree.syntax.*
 
+import scala.math.exp
 import scala.math.sqrt
 
 class LVFitSuite extends munit.FunSuite:
@@ -70,3 +73,47 @@ class LVFitSuite extends munit.FunSuite:
       val vol = surface(obs.expiry, obs.strike).get
       val clue = s"vol=$vol, refVol=${obs.vol}, strike=${obs.strike}, expiry=${obs.expiry}"
       assertEqualsDouble(vol, obs.vol, 0.0001, clue)
+
+  test("black-scholes: fitted quantile function should be close to closed-form"):
+    val fitter = LocalVolFitter.apply
+
+    val expiries =
+      List(YearFraction.oneYear / 12, YearFraction.oneYear / 4, YearFraction.oneYear)
+
+    val vol = 0.3
+
+    val obs = expiries
+      .flatMap(t =>
+        List(
+          PureObservation(0.90, t, vol, 0.01),
+          PureObservation(0.95, t, vol, 0.01),
+          PureObservation(0.99, t, vol, 0.01),
+          PureObservation(1.00, t, vol, 0.01),
+          PureObservation(1.01, t, vol, 0.01),
+          PureObservation(1.05, t, vol, 0.01),
+          PureObservation(1.10, t, vol, 0.01)
+        )
+      )
+
+    val settings = Settings(3, 0.01, 1.0)
+
+    val result = fitter.fitPureObservations(obs, settings).toTry.get
+
+    val qf = fitter.pureQuantile(result).toTry.get
+
+    def lognormalQF(expiry: Double, vol: Double, drift: Double, p: Double) =
+      exp(expiry * (drift - 0.5 * vol * vol) + sqrt(expiry) * vol * normal.inverseCdf(p))
+
+    val ts = List(0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0).map(_.yf)
+    val ps = List(0.1, 0.01, 0.001, 0.0001, 0.00001)
+
+    ts.flatMap(t => ps.tupleLeft(t))
+      .foreach: (t, p) =>
+        val x0 = qf(t, p).get
+        val x1 = qf(t, 1 - p).get
+        val x0Ref = lognormalQF(t.toDouble, vol, 0.0, p)
+        val x1Ref = lognormalQF(t.toDouble, vol, 0.0, 1 - p)
+        val clue = s"t=$t, p=$p, x0=$x0, x0Ref=$x0Ref, x1=$x1, x1Ref=$x1Ref"
+        // println(clue)
+        assertEqualsDouble(x0, x0Ref, x0Ref * 0.01, clue)
+        assertEqualsDouble(x1, x1Ref, x1Ref * 0.01, clue)

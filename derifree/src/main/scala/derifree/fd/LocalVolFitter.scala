@@ -21,6 +21,7 @@ import cats.syntax.all.*
 import derifree.dtos.etd.options.Snapshot
 import derifree.math.LevenbergMarquardt
 import derifree.math.LinearInterpolation
+import derifree.math.RootFinding
 import derifree.syntax.*
 import derifree.syntax.given
 
@@ -46,6 +47,26 @@ sealed trait LocalVolFitter:
   def pureVolSurface(result: Result): Either[Error, VolSurface[YearFraction]]
 
   def pureLocalVolSurface(result: Result): LocalVolSurface[YearFraction]
+
+  /** Quantile function of the "pure" spot process X_t. */
+  def pureQuantile(result: Result): Either[Error, QuantileFunction[YearFraction]]
+
+  /** Quantile function of the "real" spot process S_t. */
+  def quantile[T: TimeLike](
+      result: Result,
+      forward: Forward[T],
+      refTime: T
+  ): Either[Error, QuantileFunction[T]]
+
+  /** Marginal CDF of the "pure" process X_t. */
+  def pureCdf(result: Result): Either[Error, Cdf[YearFraction]]
+
+  /** Marginal cdf of the "real" spot price process S_t. */
+  def cdf[T: TimeLike](
+      result: Result,
+      forward: Forward[T],
+      refTime: T
+  ): Either[Error, Cdf[T]]
 
   /** Marginal density of the "pure" process X_t. */
   def pureDensity(result: Result): Either[Error, Density[YearFraction]]
@@ -146,21 +167,77 @@ object LocalVolFitter:
   trait Density[T]:
     def apply(time: T, spot: Double): Double
 
+  trait Cdf[T]:
+    def apply(time: T, spot: Double): Option[Double]
+
+  trait QuantileFunction[T]:
+    def apply(time: T, p: Double): Option[Double]
+
   def apply = new LocalVolFitter:
+
+    override def pureQuantile(result: Result): Either[Error, QuantileFunction[YearFraction]] =
+      pureCdf(result).map(pcdf =>
+        new QuantileFunction[YearFraction] {
+
+          override def apply(time: YearFraction, p: Double): Option[Double] =
+            val i = result.expiries.search(time).insertionPoint
+            val (lb, ub) = result.gridBounds(max(0, i - 1))
+            RootFinding
+              .brent(
+                x => pcdf(time, x).get - p,
+                lb,
+                ub,
+                RootFinding.Settings(absAccuracy = 1e-5)
+              )
+              .toOption
+
+        }
+      )
+
+    override def quantile[T: TimeLike](
+        result: Result,
+        forward: Forward[T],
+        refTime: T
+    ): Either[Error, QuantileFunction[T]] = pureQuantile(result).map(pqf =>
+      new QuantileFunction[T] {
+
+        override def apply(time: T, p: Double): Option[Double] =
+          val t = refTime.yearFractionTo(time)
+          val f = forward(time)
+          val d = forward.dividendFloor(time)
+          pqf(t, p).map(x => (f - d) * x + d)
+
+      }
+    )
+
+    override def cdf[T: TimeLike](
+        result: Result,
+        forward: Forward[T],
+        refTime: T
+    ): Either[Error, Cdf[T]] =
+      pureCdf(result).map(pcdf =>
+        new Cdf[T]:
+          def apply(time: T, spot: Double): Option[Double] =
+            val t = refTime.yearFractionTo(time)
+            val f = forward(time)
+            val d = forward.dividendFloor(time)
+            val x = (spot - d) / (f - d)
+            if (spot > d) then pcdf(t, x) else 0.0.some
+      )
 
     def density[T: TimeLike](
         result: Result,
         forward: Forward[T],
         refTime: T
     ): Either[Error, Density[T]] =
-      pureDensity(result).map(pureD =>
+      pureDensity(result).map(pdensity =>
         new Density[T]:
           def apply(time: T, spot: Double): Double =
             val t = refTime.yearFractionTo(time)
             val f = forward(time)
             val d = forward.dividendFloor(time)
             val x = (spot - d) / (f - d)
-            if spot > d then pureD(t, x) / (f - d) else 0.0
+            if spot > d then pdensity(t, x) / (f - d) else 0.0
       )
 
     def pureDensity(result: Result): Either[Error, Density[YearFraction]] =
@@ -168,6 +245,11 @@ object LocalVolFitter:
         .catchNonFatal(
           pureDensityImpl(result)
         )
+        .leftMap(t => Error.Generic(t.getMessage))
+
+    override def pureCdf(result: Result): Either[Error, Cdf[YearFraction]] =
+      Either
+        .catchNonFatal(pureCdfImpl(result))
         .leftMap(t => Error.Generic(t.getMessage))
 
     def fitPureObservations(
@@ -614,6 +696,29 @@ object LocalVolFitter:
     new Density[YearFraction]:
       def apply(time: YearFraction, spot: Double): Double =
         interpolatedDensity(time, spot).toOption.getOrElse(0.0)
+
+  private def pureCdfImpl(result: Result): Cdf[YearFraction] =
+    val (times, prices) = pureCallPriceSlices(result)
+    val maxT = times.last
+    def interpolatedCdf(time: YearFraction, spot: Double) =
+      for
+        _ <- Either.raiseUnless(time.toDouble <= maxT.toDouble)(
+          Error.BadInputs(s"cannot extrapolate beyond $maxT")
+        )
+        _ <- Either.raiseUnless(time.toDouble > 0.0)(
+          Error.BadInputs(s"time must be strictly positive")
+        )
+        i = times.search(time).insertionPoint
+        t = time.toDouble
+        t1 = times(i - 1).toDouble
+        t2 = times(i).toDouble
+        c1 = prices(i - 1).fstDerivative(spot) + 1.0
+        c2 = prices(i).fstDerivative(spot) + 1.0
+      yield c1 + (t - t1) * (c2 - c1) / (t2 - t1)
+
+    new Cdf[YearFraction]:
+      def apply(time: YearFraction, spot: Double): Option[Double] =
+        interpolatedCdf(time, spot).toOption
 
   private def pureCallPriceSlices(
       result: Result
