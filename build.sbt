@@ -19,10 +19,11 @@ ThisBuild / developers := List(
 )
 
 ThisBuild / tlFatalWarnings := false
+ThisBuild / tlCiHeaderCheck := false
+ThisBuild / tlCiDependencyGraphJob := false
 
 // we need at least java 11 for ejml
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
-ThisBuild / githubWorkflowPublishTargetBranches := Seq.empty
 
 lazy val V = new {
   val cats = "2.10.0"
