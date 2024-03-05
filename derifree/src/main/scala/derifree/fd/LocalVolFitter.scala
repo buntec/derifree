@@ -32,6 +32,7 @@ import scala.math.exp
 import scala.math.log
 import scala.math.max
 import scala.math.min
+import scala.math.round
 import scala.math.pow
 import scala.math.sqrt
 
@@ -104,9 +105,9 @@ sealed trait LocalVolFitter:
 object LocalVolFitter:
 
   case class Settings(
-      nKnots: Int,
-      minLv: Double,
-      maxLv: Double,
+      minLv: Double = 0.01,
+      maxLv: Double = 5.0,
+      nKnots: Settings.Knots = Settings.Knots.Fixed(5),
       spatialGrid: Settings.SpatialGrid = Settings.SpatialGrid(),
       timeGrid: Settings.TimeGrid = Settings.TimeGrid(),
       nRannacherSteps: Int = 2
@@ -131,6 +132,10 @@ object LocalVolFitter:
         tailFraction: Double = 0.025,
         expansionMaxIters: Int = 10
     )
+
+    enum Knots:
+      case Fixed(n: Int)
+      case Dynamic(min: Int, max: Int, alpha: Double, minStrikes: Int, minSpread: Double)
 
   case class Result(
       /** The fitted expiries in year fraction terms. By convention the first element is always
@@ -408,18 +413,39 @@ object LocalVolFitter:
 
     val timegrid = timeGridFactory(expiries.toSet)
 
+    val nKnotsByExpiry = settings.nKnots match
+      case Settings.Knots.Fixed(n) => obsByExpiry.map(_ => n)
+      case Settings.Knots.Dynamic(minKnots, maxKnots, alpha, minStrikes, minSpread) =>
+        obsByExpiry.map: (_, obs) =>
+          val nStrikes = obs.map(_.strike).toSet.size
+          val nObs = obs.length
+          val medianSpread = obs.map(_.spread).sorted.apply(nObs / 2)
+          round(
+            min(
+              maxKnots,
+              max(
+                minKnots,
+                alpha * log(1.0 + max(nStrikes - minStrikes, 0)) / max(
+                  medianSpread / minSpread,
+                  1.0
+                )
+              )
+            )
+          ).toInt
+
     val state = expiries
       .zip(obsByExpiry)
+      .zip(nKnotsByExpiry)
       .foldLeft(State()):
-        case (state, (t1, (t2, obs))) =>
+        case (state, ((t1, (t2, obs)), nKnots)) =>
           val timeGridSlice = timegrid.slice(t1, t2).get.yearFractions
 
           val minStrike = obs.map(_.strike).min
           val maxStrike = obs.map(_.strike).max
 
           val lvKnots = List
-            .tabulate(settings.nKnots)(i =>
-              minStrike * pow(maxStrike / minStrike, i.toDouble / (settings.nKnots - 1))
+            .tabulate(nKnots)(i =>
+              minStrike * pow(maxStrike / minStrike, i.toDouble / (nKnots - 1))
             )
             .toIndexedSeq
 

@@ -56,7 +56,7 @@ class LVFitSuite extends munit.FunSuite:
           PureObservation(1.10, t, vol, 0.01)
         )
       )
-    val settings = Settings(3, 0.01, 1.0)
+    val settings = Settings(0.01, 1.0, Settings.Knots.Fixed(3))
     val result = fitter.fitPureObservations(obs, settings).toTry.get
 
     val clue =
@@ -95,7 +95,7 @@ class LVFitSuite extends munit.FunSuite:
         )
       )
 
-    val settings = Settings(3, 0.01, 1.0)
+    val settings = Settings(0.01, 1.0, Settings.Knots.Fixed(3))
 
     val result = fitter.fitPureObservations(obs, settings).toTry.get
 

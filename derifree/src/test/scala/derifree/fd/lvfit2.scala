@@ -21,6 +21,7 @@ import cats.effect.IO
 import cats.syntax.all.*
 import derifree.dtos.etd.options.OptionQuote
 import derifree.dtos.etd.options.Snapshot
+import derifree.fd.LocalVolFitter.Settings
 import derifree.testutils.*
 
 import scala.concurrent.duration.*
@@ -51,7 +52,11 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
         )
 
         val lvFitter = LocalVolFitter.apply
-        val lvSettings = LocalVolFitter.Settings(5, 0.01, 3.0)
+        val lvSettings = LocalVolFitter.Settings(
+          0.01,
+          3.0,
+          Settings.Knots.Dynamic(3, 12, 5.0, 3, 0.001)
+        )
 
         val initialBorrow = YieldCurve.zero[YearFraction]
         val divs = Nil
@@ -109,6 +114,6 @@ class LVFitSuite2 extends munit.CatsEffectSuite:
               YearFraction.oneDay * 7
             )
           )
-          _ <- IO.println(lv)
+          _ <- IO.println(s"#knots = ${lv.lvKnots.map(_.length).mkString(", ")}")
         yield ()
     )
